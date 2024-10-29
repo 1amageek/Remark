@@ -17,7 +17,7 @@ To install Remark, add it as a dependency in your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/Remark.git", from: "1.0.0")
+    .package(url: "https://github.com/1amageek/Remark.git", branch: "main")
 ]
 ```
 
