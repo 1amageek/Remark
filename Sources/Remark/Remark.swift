@@ -197,6 +197,12 @@ extension Remark {
                 let alt = try element.attr("alt")
                 markdown += "![\(alt)](\(resolvedSrc))"
                 
+            case "video":
+                let src = try element.attr("src")
+                let resolvedSrc = resolveURL(src, pageURL: pageURL)
+                let title = try element.attr("title").isEmpty ? "video" : element.attr("title")
+                markdown += "[\(title)](\(resolvedSrc))"
+                
             case "h1", "h2", "h3", "h4", "h5", "h6":
                 let headerLevel = Int(String(tagName.dropFirst())) ?? 1
                 let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
@@ -374,3 +380,146 @@ extension Remark {
     }
 }
 
+extension Remark {
+    /// Media type for sections content
+    public enum Media: Equatable {
+        /// An image with URL and alt text
+        case image(url: String, alt: String)
+        /// A video with URL
+        case video(url: String)
+        /// No media
+        case none
+    }
+    
+    /// A section of markdown content
+    public struct Section: Equatable {
+        /// The markdown text content
+        public let content: String
+        /// The first media element found in the section
+        public let media: Media
+        
+        /// Creates a new section with content and media
+        /// - Parameters:
+        ///   - content: The markdown text content
+        ///   - media: The first media element found in the section
+        public init(content: String, media: Media) {
+            self.content = content
+            self.media = media
+        }
+    }
+
+    /// Returns the heading level from a given line of text.
+    /// - Parameter line: The line of text to examine.
+    /// - Returns: The heading level (1-6) if the line is a valid Markdown heading, or `nil` if it's not.
+    private func headerLevel(from line: String) -> Int? {
+        let headerPattern = /^(#{1,6})\s+\S/
+        guard let match = line.firstMatch(of: headerPattern) else {
+            return nil
+        }
+        return match.1.count
+    }
+    
+    /// Normalizes Markdown text by removing excessive newlines and whitespace.
+    /// - Parameter text: The Markdown text to normalize.
+    /// - Returns: The normalized Markdown text with consistent line breaks and trimmed whitespace.
+    private func normalizeMarkdown(_ text: String) -> String {
+        let normalized = text.replacingOccurrences(of: "\n{2,}", with: "\n", options: .regularExpression)
+        return normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    /// Splits the Markdown content into sections based on headings.
+    /// - Parameter maxLevel: The maximum heading level to consider for section splitting (default is 1).
+    /// - Returns: An array of `Section` objects, each containing the content and associated media.
+    ///
+    /// This method divides the Markdown content into sections based on headings up to the specified level.
+    /// Each section includes all content until the next heading of the same or higher level is encountered.
+    /// The first media element (image or video) found in each section is stored in the section's media property.
+    ///
+    /// Example:
+    /// ```markdown
+    /// # Section 1
+    /// Content for section 1
+    /// ![Image](url)
+    /// More content
+    ///
+    /// # Section 2
+    /// Content for section 2
+    /// ```
+    /// This would create two sections, with the first section containing the image as its media.
+    public func sections(with maxLevel: Int = 1) -> [Section] {
+        let lines = markdown.components(separatedBy: .newlines)
+        var sections: [Section] = []
+        var currentLines: [String] = []
+        var currentMedia = Media.none
+        var hasStartedSection = false
+        
+        for line in lines {
+            if let headerLevel = headerLevel(from: line), headerLevel <= maxLevel {
+                // Save the existing section if exists
+                if hasStartedSection {
+                    let content = normalizeMarkdown(currentLines.joined(separator: "\n"))
+                    if !content.isEmpty {
+                        let section = Section(
+                            content: content,
+                            media: currentMedia
+                        )
+                        sections.append(section)
+                    }
+                }
+                
+                // Prepare for new section
+                currentLines = [line]
+                currentMedia = .none
+                hasStartedSection = true
+                continue
+            }
+            
+            // Skip if section hasn't started
+            guard hasStartedSection else { continue }
+            
+            // Detect media if none found in current section
+            if currentMedia == .none {
+                if let media = extractMedia(from: line) {
+                    currentMedia = media
+                }
+            }
+            
+            currentLines.append(line)
+        }
+        
+        // Save the last section
+        if hasStartedSection && !currentLines.isEmpty {
+            let content = normalizeMarkdown(currentLines.joined(separator: "\n"))
+            if !content.isEmpty {
+                let section = Section(
+                    content: content,
+                    media: currentMedia
+                )
+                sections.append(section)
+            }
+        }
+        
+        return sections
+    }
+    
+    /// Extracts media information from a line of Markdown text.
+    /// - Parameter line: The line of text to examine.
+    /// - Returns: A `Media` object if the line contains an image or video reference, or `nil` if no media is found.
+    ///
+    /// This method checks for two types of media references:
+    /// - Images: Markdown image syntax `![alt](url)`
+    /// - Videos: Markdown link syntax at the start of a line `[title](url)`
+    private func extractMedia(from line: String) -> Media? {
+        // Check for image (syntax with !)
+        if let imageMatch = line.firstMatch(of: /!\[(.*?)\]\((.*?)\)/) {
+            return .image(url: String(imageMatch.2), alt: String(imageMatch.1))
+        }
+        
+        // Check for video (simple link syntax)
+        if let videoMatch = line.firstMatch(of: /^\[(.*?)\]\((.*?)\)$/) {
+            return .video(url: String(videoMatch.2))
+        }
+        
+        return nil
+    }
+}

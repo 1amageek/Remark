@@ -408,3 +408,226 @@ func testURLResolutionWithoutBaseURL() throws {
     // 画像の相対パスもそのまま
     #expect(markdown.contains("(/images/photo.jpg)"))
 }
+
+@Test("Video tag conversion")
+func testVideoTag() throws {
+    let html = "<video src=\"https://example.com/video.mp4\" title=\"サンプルビデオ\"></video>"
+    let element = try SwiftSoup.parse(html).body()!.child(0)
+    let expectedMarkdown = "[サンプルビデオ](https://example.com/video.mp4)"
+    
+    let markdown = try Remark.convertNodeToMarkdown(element)
+    #expect(markdown == expectedMarkdown)
+}
+
+@Test("Video tag without title")
+func testVideoTagWithoutTitle() throws {
+    let html = "<video src=\"https://example.com/video.mp4\"></video>"
+    let element = try SwiftSoup.parse(html).body()!.child(0)
+    let expectedMarkdown = "[video](https://example.com/video.mp4)"
+    
+    let markdown = try Remark.convertNodeToMarkdown(element)
+    #expect(markdown == expectedMarkdown)
+}
+
+@Test("Video tag with attributes")
+func testVideoTagWithAttributes() throws {
+    let html = """
+    <video src="https://example.com/video.mp4" title="プレゼンテーション" controls width="640" height="360"></video>
+    """
+    let element = try SwiftSoup.parse(html).body()!.child(0)
+    let expectedMarkdown = "[プレゼンテーション](https://example.com/video.mp4)"
+    
+    let markdown = try Remark.convertNodeToMarkdown(element)
+    #expect(markdown == expectedMarkdown)
+}
+
+@Test("Basic section splitting with h1")
+func testBasicSectionSplitting() throws {
+    let html = """
+    <main>
+        <h1>Section 1</h1>
+        <p>Content 1</p>
+        <h2>Subsection 1</h2>
+        <p>Content 1.1</p>
+        <h1>Section 2</h1>
+        <img src="url" alt="Image">
+        <p>Content 2</p>
+    </main>
+    """
+    
+    let remark = try Remark(html)
+    let sections = remark.sections()
+
+    #expect(sections.count == 2)
+    #expect(sections[0].content == "# Section 1\nContent 1\n## Subsection 1\nContent 1.1")
+    #expect(sections[1].content == "# Section 2\n![Image](url)\nContent 2")
+    #expect(sections[1].media == .image(url: "url", alt: "Image"))
+}
+
+@Test("Section splitting with different levels")
+func testSectionSplittingWithLevels() throws {
+    let html = """
+    <article>
+        <h1>H1 Section</h1>
+        <p>Content 1</p>
+        <h2>H2 Section</h2>
+        <p>Content 2</p>
+        <h3>H3 Section</h3>
+        <p>Content 3</p>
+        <h2>Another H2</h2>
+        <p>Content 4</p>
+    </article>
+    """
+    
+    let remark = try Remark(html)
+    
+    // Level 1
+    let h1Sections = remark.sections(with: 1)
+    #expect(h1Sections.count == 1)
+    #expect(h1Sections[0].content.contains("# H1 Section"))
+    
+    // Level 2
+    let h2Sections = remark.sections(with: 2)
+    #expect(h2Sections.count == 3)
+    #expect(h2Sections[1].content.contains("## H2 Section"))
+    
+    // Level 3
+    let h3Sections = remark.sections(with: 3)
+    #expect(h3Sections.count == 4)
+    #expect(h3Sections[2].content.contains("### H3 Section"))
+}
+
+@Test("Section splitting with media detection")
+func testSectionSplittingWithMedia() throws {
+    let html = """
+    <article>
+        <h1>Section 1</h1>
+        <img src="url1" alt="Image 1">
+        <p>Content 1</p>
+        <h1>Section 2</h1>
+        <video src="video1"></video>
+        <p>Content 2</p>
+        <h1>Section 3</h1>
+        <p>Content 3</p>
+        <img src="url2" alt="Image 2">
+    </article>
+    """
+    
+    let remark = try Remark(html)
+    let sections = remark.sections()
+    
+    #expect(sections.count == 3)
+    #expect(sections[0].media == .image(url: "url1", alt: "Image 1"))
+    #expect(sections[1].media == .video(url: "video1"))
+    #expect(sections[2].media == .image(url: "url2", alt: "Image 2"))
+}
+
+@Test("Empty and invalid section handling")
+func testEmptyAndInvalidSections() throws {
+    let html = """
+    <article>
+        <h1>Section 1</h1>
+        <h1>Section 2</h1>
+        <p>Content 2</p>
+        <p>#Invalid Header</p>
+        <h3>Valid Header</h3>
+    </article>
+    """
+    
+    let remark = try Remark(html)
+    let sections = remark.sections()
+    
+    #expect(sections.count == 2)
+    #expect(sections[0].content == "# Section 1")
+    #expect(sections[1].content.contains("# Section 2"))
+    #expect(sections[1].content.contains("#Invalid Header"))
+}
+
+@Test("Section splitting with nested content")
+func testSectionSplittingWithNestedContent() throws {
+    let html = """
+    <article>
+        <h1>Main Section</h1>
+        <h2>Subsection 1</h2>
+        <ul>
+            <li>List item 1</li>
+            <li>List item 2
+                <ul>
+                    <li>Nested item</li>
+                </ul>
+            </li>
+        </ul>
+        <h2>Subsection 2</h2>
+        <blockquote>
+            <p>Blockquote</p>
+            <blockquote>
+                <p>Nested quote</p>
+            </blockquote>
+        </blockquote>
+    </article>
+    """
+    
+    let remark = try Remark(html)
+    
+    // Level 1
+    let h1Sections = remark.sections()
+    #expect(h1Sections.count == 1)
+    #expect(h1Sections[0].content.contains("# Main Section"))
+    #expect(h1Sections[0].content.contains("- List item 1"))
+    
+    // Level 2
+    let h2Sections = remark.sections(with: 2)
+    #expect(h2Sections.count == 3)
+    print(h2Sections[1].content)
+    print("----")
+    print(h2Sections[2].content)
+    print("----")
+    #expect(h2Sections[1].content.contains("## Subsection 1"))
+    #expect(h2Sections[2].content.contains("> > Nested quote"))
+}
+
+@Test("Section splitting with multiple media types")
+func testSectionSplittingWithMultipleMedia() throws {
+    let html = """
+    <article>
+        <h1>Section 1</h1>
+        <img src="url1" alt="First">
+        <p>Content</p>
+        <img src="url2" alt="Second">
+        <h1>Section 2</h1>
+        <video src="video1"></video>
+        <p>Content</p>
+        <img src="url3" alt="Image">
+    </article>
+    """
+    
+    let remark = try Remark(html)
+    let sections = remark.sections()
+    
+    #expect(sections.count == 2)
+    // 各セクションの最初のメディアのみが保持される
+    #expect(sections[0].media == .image(url: "url1", alt: "First"))
+    #expect(sections[1].media == .video(url: "video1"))
+}
+
+@Test("Section splitting ignores invalid headers")
+func testSectionSplittingInvalidHeaders() throws {
+    let html = """
+    <article>
+        <h1>Valid Header 1</h1>
+        <p>Content 1</p>
+        <p>#Invalid Header</p>
+        <p>Content 2</p>
+        <h1>Valid Header 2</h1>
+        <p>##Invalid Header</p>
+        <p>Content 3</p>
+    </article>
+    """
+    
+    let remark = try Remark(html)
+    let sections = remark.sections()
+    
+    #expect(sections.count == 2)
+    #expect(sections[0].content.contains("#Invalid Header"))
+    #expect(sections[1].content.contains("##Invalid Header"))
+}
