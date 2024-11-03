@@ -5,6 +5,8 @@ import SwiftSoup
 
 /// A struct for parsing HTML content and extracting data into Markdown, with support for front matter metadata such as title, description, and Open Graph (OG) data.
 public struct Remark: Sendable {
+    /// The base URL of the page being processed
+    public let url: URL?
     
     /// The page title extracted from the HTML.
     public let title: String
@@ -22,9 +24,12 @@ public struct Remark: Sendable {
     public let markdown: String
     
     /// Initializes a `Remark` instance by parsing the provided HTML.
-    /// - Parameter html: The HTML string to be parsed.
+    /// - Parameters:
+    ///   - html: The HTML string to be parsed.
+    ///   - baseURL: The base URL of the page being processed (optional).
     /// - Throws: An error if the HTML cannot be parsed.
-    public init(_ html: String) throws {
+    public init(_ html: String, url: URL? = nil) throws {
+        self.url = url
         let doc = try SwiftSoup.parse(html)
         
         // Extract title, description, and Open Graph data
@@ -34,7 +39,7 @@ public struct Remark: Sendable {
         
         // Extract main content and convert to Markdown
         let mainContent = try Remark.extractMainContent(from: doc)
-        self.markdown = try mainContent.array().map { try Remark.convertNodeToMarkdown($0) }.joined()
+        self.markdown = try mainContent.array().map { try Remark.convertNodeToMarkdown($0, pageURL: url) }.joined()
         
         // Extract plain text body
         self.body = try mainContent.text()
@@ -124,15 +129,51 @@ extension Remark {
 }
 
 extension Remark {
+    /// Resolves a relative URL to an absolute URL using the page URL.
+    /// - Parameters:
+    ///   - urlString: The URL string to resolve.
+    ///   - pageURL: The URL of the page containing this URL.
+    /// - Returns: The resolved absolute URL string.
+    private static func resolveURL(_ urlString: String, pageURL: URL?) -> String {
+        guard let pageURL = pageURL else { return urlString }
+        
+        // Check if the URL is already absolute
+        if let _ = URL(string: urlString), urlString.hasPrefix("http://") || urlString.hasPrefix("https://") {
+            return urlString
+        }
+        
+        // Handle protocol-relative URLs
+        if urlString.hasPrefix("//") {
+            return pageURL.scheme! + ":" + urlString
+        }
+        
+        // Handle root-relative URLs
+        if urlString.hasPrefix("/") {
+            var components = URLComponents(url: pageURL, resolvingAgainstBaseURL: true)!
+            components.path = urlString
+            components.query = nil
+            components.fragment = nil
+            return components.url?.absoluteString ?? urlString
+        }
+        
+        // Handle relative URLs
+        if let resolvedURL = URL(string: urlString, relativeTo: pageURL) {
+            return resolvedURL.absoluteString
+        }
+        
+        return urlString
+    }
     
     /// Recursively converts a `Node` to Markdown.
     /// - Parameters:
     ///   - node: The HTML node to convert.
     ///   - quoteLevel: The quote level, used for nested blockquotes.
+    ///   - pageURL: The URL of the page being processed.
     /// - Returns: The converted Markdown as a string.
     /// - Throws: An error if conversion fails.
-    static func convertNodeToMarkdown(_ node: Node, quoteLevel: Int = 0) throws -> String {
-        var markdown = ""        
+    static func convertNodeToMarkdown(_ node: Node, quoteLevel: Int = 0, pageURL: URL? = nil) throws -> String {
+        var markdown = ""
+        
         if let textNode = node as? TextNode {
             let text = textNode.text().trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
@@ -142,39 +183,43 @@ extension Remark {
             let tagName = element.tagName()
             
             switch tagName {
-            case "h1", "h2", "h3", "h4", "h5", "h6":
-                let headerLevel = Int(String(tagName.dropFirst())) ?? 1
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel)
-                markdown += "\n" + String(repeating: "#", count: headerLevel) + " " + content + "\n"
-                
-            case "p":
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel)
-                markdown += "\n" + content + "\n"
-                
-            case "ul":
-                let content = try convertListToMarkdown(element, isOrdered: false)
-                markdown += content
-                
-            case "ol":
-                let content = try convertListToMarkdown(element, isOrdered: true)
-                markdown += content
-                
             case "a":
                 let href = try element.attr("href")
-                let text = try element.attr("aria-label").isEmpty ? try element.getChildMarkdown(quoteLevel: quoteLevel) : try element.attr("aria-label")
-                markdown += "[\(text)](\(href))"
+                let resolvedHref = resolveURL(href, pageURL: pageURL)
+                let text = try element.attr("aria-label").isEmpty ?
+                try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL) :
+                try element.attr("aria-label")
+                markdown += "[\(text)](\(resolvedHref))"
                 
             case "img":
                 let src = try element.attr("src")
+                let resolvedSrc = resolveURL(src, pageURL: pageURL)
                 let alt = try element.attr("alt")
-                markdown += "![\(alt)](\(src))"
+                markdown += "![\(alt)](\(resolvedSrc))"
+                
+            case "h1", "h2", "h3", "h4", "h5", "h6":
+                let headerLevel = Int(String(tagName.dropFirst())) ?? 1
+                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
+                markdown += "\n" + String(repeating: "#", count: headerLevel) + " " + content + "\n"
+                
+            case "p":
+                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
+                markdown += "\n" + content + "\n"
+                
+            case "ul":
+                let content = try convertListToMarkdown(element, isOrdered: false, pageURL: pageURL)
+                markdown += content
+                
+            case "ol":
+                let content = try convertListToMarkdown(element, isOrdered: true, pageURL: pageURL)
+                markdown += content
                 
             case "table":
-                let content = try convertTableToMarkdown(element)
+                let content = try convertTableToMarkdown(element, pageURL: pageURL)
                 markdown += content
                 
             case "blockquote":
-                let innerContent = try element.getChildMarkdown(quoteLevel: 0)
+                let innerContent = try element.getChildMarkdown(quoteLevel: 0, pageURL: pageURL)
                 let quotePrefix = String(repeating: "> ", count: quoteLevel + 1)
                 let quotedContent = innerContent
                     .split(separator: "\n")
@@ -187,36 +232,37 @@ extension Remark {
                 markdown += "\n```\n\(code)\n```\n"
                 
             case "code":
-                let codeText = try element.getChildMarkdown(quoteLevel: quoteLevel)
+                let codeText = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
                 markdown += "`\(codeText)`"
                 
             case "strong", "b":
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel)
+                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
                 markdown += "**\(content)**"
                 
             case "em", "i":
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel)
+                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
                 markdown += "*\(content)*"
                 
             case "hr":
                 markdown += "\n---\n"
                 
             default:
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel)
+                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
                 markdown += content
             }
         }
         return markdown
     }
-
+    
     /// Converts HTML lists to Markdown.
     /// - Parameters:
     ///   - element: The list element.
     ///   - isOrdered: A boolean indicating if the list is ordered.
     ///   - indentLevel: The indentation level.
+    ///   - pageURL: The URL of the page being processed.
     /// - Returns: The Markdown string for the list.
     /// - Throws: An error if conversion fails.
-    static func convertListToMarkdown(_ element: Element, isOrdered: Bool, indentLevel: Int = 0) throws -> String {
+    static func convertListToMarkdown(_ element: Element, isOrdered: Bool, indentLevel: Int = 0, pageURL: URL? = nil) throws -> String {
         var markdown = ""
         if indentLevel == 0 {
             markdown += "\n"
@@ -235,7 +281,7 @@ extension Remark {
             
             var content = ""
             for child in childNodes {
-                content += try convertNodeToMarkdown(child)
+                content += try convertNodeToMarkdown(child, pageURL: pageURL)
             }
             
             let itemContent = "\(prefix)\(content)".trimmingCharacters(in: .whitespacesAndNewlines)
@@ -249,7 +295,7 @@ extension Remark {
                 markdown += "\n"
                 for childList in childLists {
                     let isChildOrdered = childList.tagName() == "ol"
-                    markdown += try convertListToMarkdown(childList, isOrdered: isChildOrdered, indentLevel: indentLevel + 1)
+                    markdown += try convertListToMarkdown(childList, isOrdered: isChildOrdered, indentLevel: indentLevel + 1, pageURL: pageURL)
                 }
             }
             
@@ -263,23 +309,43 @@ extension Remark {
         }
         return markdown
     }
-
+    
     /// Converts a table element to Markdown.
-    /// - Parameter element: The table element.
+    /// - Parameters:
+    ///   - element: The table element.
+    ///   - pageURL: The URL of the page being processed.
     /// - Returns: The Markdown string for the table.
     /// - Throws: An error if conversion fails.
-    static func convertTableToMarkdown(_ element: Element) throws -> String {
+    static func convertTableToMarkdown(_ element: Element, pageURL: URL? = nil) throws -> String {
         var markdown = "\n"
         let rows = try element.select("tr")
         for (rowIndex, row) in rows.array().enumerated() {
             let cells = try row.select("th, td")
-            let cellTexts = try cells.array().map { try $0.text() }
-            markdown += "| " + cellTexts.joined(separator: " | ") + " |\n"
+            let cellContents = try cells.array().map { cell in
+                try convertNodeToMarkdown(cell, pageURL: pageURL)
+            }
+            markdown += "| " + cellContents.joined(separator: " | ") + " |\n"
             if rowIndex == 0 {
-                markdown += "| " + [String](repeating: "---", count: cellTexts.count).joined(separator: " | ") + " |\n"
+                markdown += "| " + [String](repeating: "---", count: cellContents.count).joined(separator: " | ") + " |\n"
             }
         }
         markdown += "\n"
+        return markdown
+    }
+}
+
+extension Element {
+    /// Retrieves the Markdown content for all child nodes of an element.
+    /// - Parameters:
+    ///   - quoteLevel: The quote level for blockquotes.
+    ///   - pageURL: The URL of the page being processed.
+    /// - Returns: The Markdown content as a string.
+    /// - Throws: An error if conversion fails.
+    func getChildMarkdown(quoteLevel: Int = 0, pageURL: URL? = nil) throws -> String {
+        var markdown = ""
+        for child in self.getChildNodes() {
+            markdown += try Remark.convertNodeToMarkdown(child, quoteLevel: quoteLevel, pageURL: pageURL)
+        }
         return markdown
     }
 }
@@ -308,16 +374,3 @@ extension Remark {
     }
 }
 
-extension Element {
-    /// Retrieves the Markdown content for all child nodes of an element.
-    /// - Parameter quoteLevel: The quote level for blockquotes.
-    /// - Returns: The Markdown content as a string.
-    /// - Throws: An error if conversion fails.
-    func getChildMarkdown(quoteLevel: Int = 0) throws -> String {
-        var markdown = ""
-        for child in self.getChildNodes() {
-            markdown += try Remark.convertNodeToMarkdown(child, quoteLevel: quoteLevel)
-        }
-        return markdown
-    }
-}

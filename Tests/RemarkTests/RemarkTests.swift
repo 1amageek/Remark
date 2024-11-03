@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import Remark
 import SwiftSoup
 
@@ -337,4 +338,73 @@ func testOGPDataExtraction() throws {
         let actualValue = remark.ogData[key]
         #expect(actualValue == expectedValue, "OGP data for \(key) did not match. Expected \(expectedValue), got \(String(describing: actualValue))")
     }
+}
+
+@Test("URL resolution for absolute, relative, and root-relative paths")
+func testURLResolution() throws {
+    let pageURL = URL(string: "https://example.com/articles/post.html")!
+    
+    // 異なるパターンのURLを含むHTML
+    let html = """
+    <div>
+        <a href="https://example.com/absolute">絶対パス</a>
+        <a href="/root/path">ルート相対パス</a>
+        <a href="../category/page">上位相対パス</a>
+        <a href="./local/page">現在位置相対パス</a>
+        <a href="direct/path">直接相対パス</a>
+        <img src="//cdn.example.com/image.jpg" alt="プロトコル相対">
+        <img src="/images/photo.jpg" alt="ルート相対画像">
+        <img src="../images/pic.jpg" alt="相対画像">
+    </div>
+    """
+    
+    let remark = try Remark(html, url: pageURL)
+    let markdown = remark.markdown
+    
+    // 絶対パスはそのまま
+    #expect(markdown.contains("(https://example.com/absolute)"))
+    
+    // ルート相対パスは絶対パスに変換
+    #expect(markdown.contains("(https://example.com/root/path)"))
+    
+    // 上位相対パスは正しく解決
+    #expect(markdown.contains("(https://example.com/category/page)"))
+    
+    // 現在位置相対パスは正しく解決
+    #expect(markdown.contains("(https://example.com/articles/local/page)"))
+    
+    // 直接相対パスは正しく解決
+    #expect(markdown.contains("(https://example.com/articles/direct/path)"))
+    
+    // プロトコル相対URLは正しく解決
+    #expect(markdown.contains("(https://cdn.example.com/image.jpg)"))
+    
+    // 画像のルート相対パスは絶対パスに変換
+    #expect(markdown.contains("(https://example.com/images/photo.jpg)"))
+    
+    // 画像の相対パスは正しく解決
+    #expect(markdown.contains("(https://example.com/images/pic.jpg)"))
+}
+
+@Test("URL resolution with no base URL")
+func testURLResolutionWithoutBaseURL() throws {
+    let html = """
+    <div>
+        <a href="https://example.com/absolute">絶対パス</a>
+        <a href="/relative/path">相対パス</a>
+        <img src="/images/photo.jpg" alt="画像">
+    </div>
+    """
+    
+    let remark = try Remark(html)
+    let markdown = remark.markdown
+    
+    // 絶対パスはそのまま
+    #expect(markdown.contains("(https://example.com/absolute)"))
+    
+    // ベースURLがない場合、相対パスはそのまま
+    #expect(markdown.contains("(/relative/path)"))
+    
+    // 画像の相対パスもそのまま
+    #expect(markdown.contains("(/images/photo.jpg)"))
 }
