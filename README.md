@@ -1,19 +1,21 @@
-# Remark
+# Remark 🎨✨
 
-Remark is a Swift library designed to parse HTML content into Markdown, with support for extracting Open Graph (OG) metadata and front matter generation. It provides a simple interface for HTML-to-Markdown conversion, metadata extraction, and formatting into a Markdown-ready format suitable for static site generators or Markdown-based applications.
+Convert HTML to beautiful Markdown with ease! ✨ Remark is a Swift library and command-line tool designed to parse HTML content into Markdown, with support for extracting Open Graph (OG) metadata and front matter generation. Perfect for static site generators and Markdown-based applications! 🚀
 
-## Features
+## ✨ Features
 
-- **HTML to Markdown Conversion**: Convert HTML elements (headings, lists, blockquotes, tables, etc.) to Markdown.
-- **Open Graph (OG) Data Extraction**: Extract OG metadata for social media tags.
-- **Front Matter Generation**: Automatically generate front matter including title, description, and OG metadata.
-- **Customizable Indentation and Quote Levels**: Handles nested lists, blockquotes, and other elements with flexible levels of indentation and quoting.
+- 📝 **HTML to Markdown Conversion**: Convert HTML elements to clean, readable Markdown
+- 🌐 **Open Graph (OG) Data Extraction**: Extract social media tags automatically
+- 📋 **Front Matter Generation**: Generate front matter with title, description, and OG metadata
+- 🎯 **Smart Indentation**: Perfect handling of nested lists and quotes
+- 🔗 **URL Resolution**: Automatically resolves relative URLs to absolute URLs
+- 🎨 **Intelligent Link Text**: Prioritizes accessibility with aria-label > img[alt] > title > text
 
-## Installation
+## 🚀 Installation
 
-### Swift Package Manager
+### 📚 As a Library (Swift Package Manager)
 
-To install Remark, add it as a dependency in your `Package.swift`:
+Add Remark to your `Package.swift`: 
 
 ```swift
 dependencies: [
@@ -21,11 +23,60 @@ dependencies: [
 ]
 ```
 
-## Usage
+### 💻 As a Command Line Tool
 
-### Basic Usage
+#### 🛠 Using Make (Recommended)
 
-To convert HTML to Markdown and extract metadata, initialize a Remark instance with your HTML content:
+1. Clone the repo and move into it:
+```bash
+git clone https://github.com/1amageek/Remark.git
+cd Remark
+```
+
+2. Install with make:
+```bash
+make install
+```
+
+Want a custom location? No problem! 🎯
+```bash
+PREFIX=/your/custom/path make install
+```
+
+#### 🔧 Manual Installation
+
+1. Clone the repo 📦
+2. Build release version:
+```bash
+swift build -c release
+```
+3. Copy to your bin:
+```bash
+cp .build/release/RemarkCLI /usr/local/bin/remark
+```
+
+## 🎮 Usage
+
+### 🖥 Command Line Interface
+
+Convert HTML from any URL to Markdown: ✨
+```bash
+remark https://example.com
+```
+
+Include the fancy front matter: 📋
+```bash
+remark --include-front-matter https://example.com
+```
+
+Just the plain text, please! 📝
+```bash
+remark --plain-text https://example.com
+```
+
+### 📚 Library Usage
+
+Here's a quick example to get you started! 🚀
 
 ```swift
 import Remark
@@ -34,69 +85,75 @@ let htmlContent = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>My Page</title>
-    <meta name="description" content="This is a sample description.">
-    <meta property="og:image" content="https://example.com/image.jpg">
-    <meta property="og:title" content="My Page Title">
-    <meta property="og:description" content="An amazing page to explore.">
+    <title>My Amazing Page ✨</title>
+    <meta name="description" content="Something awesome!">
+    <meta property="og:image" content="https://example.com/cool.jpg">
 </head>
 <body>
-    <main>
-        <h1>Welcome to My Page</h1>
-        <p>This is some <strong>important</strong> content.</p>
-        <blockquote>
-            <p>A thoughtful quote.</p>
-            <blockquote>
-                <p>A nested insightful thought.</p>
-            </blockquote>
-        </blockquote>
-        <ul>
-            <li>Item 1</li>
-            <li>Item 2</li>
-        </ul>
-    </main>
+    <h1>Welcome! 🎉</h1>
+    <p>This is <strong>amazing</strong> content.</p>
 </body>
 </html>
 """
 
 do {
     let remark = try Remark(htmlContent)
-    print("Title:", remark.title)
-    print("Description:", remark.description)
-    print("OG Data:", remark.ogData)
-    print("Markdown:\n", remark.page)
+    print("✨ Title:", remark.title)
+    print("📝 Description:", remark.description)
+    print("🌐 OG Data:", remark.ogData)
+    print("📄 Markdown:\n", remark.page)
 } catch {
-    print("Error:", error)
+    print("❌ Error:", error)
 }
 ```
 
-### Example Output
-With the example HTML above, the output would look like:
+### 🎨 Example Output
 
-```swift
+Your HTML becomes beautiful Markdown:
+
+```markdown
 ---
-title: "My Page"
-description: "This is a sample description."
-og_image: "https://example.com/image.jpg"
-og_title: "My Page Title"
-og_description: "An amazing page to explore."
+title: "My Amazing Page ✨"
+description: "Something awesome!"
+og_image: "https://example.com/cool.jpg"
 ---
 
-# Welcome to My Page
+# Welcome! 🎉
 
-This is some **important** content.
-
-> A thoughtful quote.
-> > A nested insightful thought.
-
-- Item 1
-- Item 2
-
+This is **amazing** content.
 ```
 
-## Tests
+## 🛠 Development
 
-### Example Test for OGP Data Extraction
+### 🏗 Building
+
+```bash
+make build      # 🚀 Release build
+make debug      # 🔍 Debug build
+```
+
+### 🧪 Testing
+
+```bash
+make test       # 🎯 Run tests
+```
+
+### 🧹 Cleaning
+
+```bash
+make clean      # 🧹 Clean build artifacts
+```
+
+### 📦 Dependencies
+
+```bash
+make update     # 🔄 Update all dependencies
+make resolve    # 🎯 Resolve dependencies
+```
+
+## 🧪 Tests
+
+Here's an example test for OGP extraction:
 
 ```swift
 import XCTest
@@ -105,16 +162,26 @@ import XCTest
 final class RemarkTests: XCTestCase {
     func testOGPDataExtraction() throws {
         let htmlContent = """
-        <meta property="og:image" content="https://example.com/image.jpg" />
-        <meta property="og:title" content="Example Page" />
-        <meta property="og:description" content="A page description." />
+        <meta property="og:image" content="https://example.com/cool.jpg" />
+        <meta property="og:title" content="Amazing Page ✨" />
         """
         
         let remark = try Remark(htmlContent)
-        XCTAssertEqual(remark.ogData["og_image"], "https://example.com/image.jpg")
-        XCTAssertEqual(remark.ogData["og_title"], "Example Page")
-        XCTAssertEqual(remark.ogData["og_description"], "A page description.")
+        XCTAssertEqual(remark.ogData["og_image"], "https://example.com/cool.jpg")
+        XCTAssertEqual(remark.ogData["og_title"], "Amazing Page ✨")
     }
 }
 ```
-To test OGP data extraction functionality, you might use:
+
+## 🌟 Contributing
+
+Love Remark? Want to make it better? Contributions are welcome! 🎉
+
+1. 🍴 Fork it
+2. 🔨 Make your changes
+3. 🧪 Test them
+4. 🎯 Send a PR
+
+## 📝 License
+
+Remark is available under the MIT license. See the LICENSE file for more info. ✨
