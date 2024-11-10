@@ -129,39 +129,97 @@ extension Remark {
 }
 
 extension Remark {
-    /// Resolves a relative URL to an absolute URL using the page URL.
-    /// - Parameters:
-    ///   - urlString: The URL string to resolve.
-    ///   - pageURL: The URL of the page containing this URL.
-    /// - Returns: The resolved absolute URL string.
-    private static func resolveURL(_ urlString: String, pageURL: URL?) -> String {
-        guard let pageURL = pageURL else { return urlString }
+    /// Extracts the text content from a link element according to priority order.
+    ///
+    /// This method follows the priority order below:
+    /// 1. aria-label attribute
+    /// 2. alt text of the first image inside the link
+    /// 3. title attribute
+    /// 4. text content
+    /// 5. URL itself (as fallback)
+    ///
+    /// - Parameter element: The element to extract text from
+    /// - Returns: The extracted text content according to priority
+    /// - Throws: SwiftSoup errors if HTML parsing fails
+    private static func extractLinkText(from element: Element) throws -> String {
+        // 1. Check aria-label
+        let ariaLabel = try element.attr("aria-label").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !ariaLabel.isEmpty {
+            return ariaLabel
+        }
         
-        // Check if the URL is already absolute
-        if let _ = URL(string: urlString), urlString.hasPrefix("http://") || urlString.hasPrefix("https://") {
-            return urlString
+        // 2. Check for non-empty alt text in images
+        if let firstValidAlt = try element.select("img")
+            .array()
+            .lazy
+            .compactMap({ img -> String? in
+                let alt = try img.attr("alt").trimmingCharacters(in: .whitespacesAndNewlines)
+                return alt.isEmpty ? nil : alt
+            })
+                .first {
+            return firstValidAlt
+        }
+        
+        // 3. Check title
+        let title = try element.attr("title").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty {
+            return title
+        }
+        
+        // 4. Check text content
+        let text = try element.text().trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty {
+            return text
+        }
+        
+        // 5. Use URL as fallback
+        let href = try element.attr("href")
+        return href
+    }
+    
+    /// Resolves a URL against a base URL.
+    ///
+    /// This method handles various types of URLs:
+    /// - Absolute URLs (starting with http:// or https://)
+    /// - Protocol-relative URLs (starting with //)
+    /// - Root-relative URLs (starting with /)
+    /// - Relative URLs
+    ///
+    /// - Parameters:
+    ///   - href: The URL string to resolve
+    ///   - baseURL: The base URL to resolve against
+    /// - Returns: The resolved absolute URL string
+    private static func resolveURL(_ href: String, pageURL: URL?) -> String {
+        guard let pageURL = pageURL else { return href }
+        
+        // Return if already absolute
+        if let _ = URL(string: href), href.hasPrefix("http://") || href.hasPrefix("https://") {
+            return href
         }
         
         // Handle protocol-relative URLs
-        if urlString.hasPrefix("//") {
-            return pageURL.scheme! + ":" + urlString
+        if href.hasPrefix("//") {
+            return pageURL.scheme! + ":" + href
         }
         
         // Handle root-relative URLs
-        if urlString.hasPrefix("/") {
+        if href.hasPrefix("/") {
             var components = URLComponents(url: pageURL, resolvingAgainstBaseURL: true)!
-            components.path = urlString
+            components.path = href
             components.query = nil
             components.fragment = nil
-            return components.url?.absoluteString ?? urlString
+            return components.url?.absoluteString ?? href
         }
         
         // Handle relative URLs
-        if let resolvedURL = URL(string: urlString, relativeTo: pageURL) {
-            return resolvedURL.absoluteString
+        if let resolvedURL = URL(string: href, relativeTo: pageURL)?.absoluteURL {
+            var components = URLComponents(url: resolvedURL, resolvingAgainstBaseURL: true)!
+            components.query = nil
+            components.fragment = nil
+            return components.url?.absoluteString ?? href
         }
         
-        return urlString
+        return href
     }
     
     /// Recursively converts a `Node` to Markdown.
@@ -186,9 +244,7 @@ extension Remark {
             case "a":
                 let href = try element.attr("href")
                 let resolvedHref = resolveURL(href, pageURL: pageURL)
-                let text = try element.attr("aria-label").isEmpty ?
-                try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL) :
-                try element.attr("aria-label")
+                let text = try extractLinkText(from: element)
                 markdown += "[\(text)](\(resolvedHref))"
                 
             case "img":

@@ -631,3 +631,120 @@ func testSectionSplittingInvalidHeaders() throws {
     #expect(sections[0].content.contains("#Invalid Header"))
     #expect(sections[1].content.contains("##Invalid Header"))
 }
+
+@Test("Link text extraction priority")
+func testLinkTextExtractionPriority() throws {
+    // Test all text sources present
+    let html1 = """
+    <a href="https://example.com" 
+       aria-label="Aria Label" 
+       title="Title">
+       <img src="image.jpg" alt="Image Alt">Link Text
+    </a>
+    """
+    let element1 = try SwiftSoup.parse(html1).body()!.child(0)
+    let markdown1 = try Remark.convertNodeToMarkdown(element1)
+    // Aria-label should take precedence
+    #expect(markdown1 == "[Aria Label](https://example.com)")
+    
+    // Test without aria-label
+    let html2 = """
+    <a href="https://example.com" title="Title">
+       <img src="image.jpg" alt="Image Alt">Link Text
+    </a>
+    """
+    let element2 = try SwiftSoup.parse(html2).body()!.child(0)
+    let markdown2 = try Remark.convertNodeToMarkdown(element2)
+    // Image alt should take precedence
+    #expect(markdown2 == "[Image Alt](https://example.com)")
+    
+    // Test without aria-label and image
+    let html3 = """
+    <a href="https://example.com" title="Title">Link Text</a>
+    """
+    let element3 = try SwiftSoup.parse(html3).body()!.child(0)
+    let markdown3 = try Remark.convertNodeToMarkdown(element3)
+    // Title should take precedence over link text
+    #expect(markdown3 == "[Title](https://example.com)")
+    
+    // Test with only link text
+    let html4 = """
+    <a href="https://example.com">Link Text</a>
+    """
+    let element4 = try SwiftSoup.parse(html4).body()!.child(0)
+    let markdown4 = try Remark.convertNodeToMarkdown(element4)
+    // Should use link text
+    #expect(markdown4 == "[Link Text](https://example.com)")
+    
+    // Test with empty content
+    let html5 = """
+    <a href="https://example.com"></a>
+    """
+    let element5 = try SwiftSoup.parse(html5).body()!.child(0)
+    let markdown5 = try Remark.convertNodeToMarkdown(element5)
+    // Should fall back to URL
+    #expect(markdown5 == "[https://example.com](https://example.com)")
+}
+
+@Test("Link text extraction with nested image priority")
+func testLinkTextExtractionWithNestedImage() throws {
+    // Multiple nested images
+    let html = """
+    <a href="https://example.com">
+        <img src="first.jpg" alt="">
+        <img src="second.jpg" alt="Second Image">
+        <img src="third.jpg" alt="Third Image">
+    </a>
+    """
+    let element = try SwiftSoup.parse(html).body()!.child(0)
+    let markdown = try Remark.convertNodeToMarkdown(element)
+    // Should use first non-empty alt text
+    #expect(markdown == "[Second Image](https://example.com)")
+}
+
+@Test("Link text extraction with mixed content")
+func testLinkTextExtractionWithMixedContent() throws {
+    let html = """
+    <a href="https://example.com">
+        Text Before
+        <img src="image.jpg" alt="Image Alt">
+        Text After
+    </a>
+    """
+    let element = try SwiftSoup.parse(html).body()!.child(0)
+    let markdown = try Remark.convertNodeToMarkdown(element)
+    // Should use image alt text over mixed content
+    #expect(markdown == "[Image Alt](https://example.com)")
+}
+
+@Test("Link text extraction with empty attributes")
+func testLinkTextExtractionWithEmptyAttributes() throws {
+    let html = """
+    <a href="https://example.com"
+       aria-label=""
+       title="">
+       <img src="image.jpg" alt="">
+       <img src="image2.jpg" alt="    ">
+    </a>
+    """
+    let element = try SwiftSoup.parse(html).body()!.child(0)
+    let markdown = try Remark.convertNodeToMarkdown(element)
+    // Should fall back to URL when all other options are empty
+    #expect(markdown == "[https://example.com](https://example.com)")
+}
+
+@Test("Link text extraction with whitespace handling")
+func testLinkTextExtractionWithWhitespace() throws {
+    let html = """
+    <a href="https://example.com"
+       aria-label="  Aria Label  "
+       title="  Title  ">
+       <img src="image.jpg" alt="  Image Alt  ">
+       Text Content
+    </a>
+    """
+    let element = try SwiftSoup.parse(html).body()!.child(0)
+    let markdown = try Remark.convertNodeToMarkdown(element)
+    // Should trim whitespace but use aria-label
+    #expect(markdown == "[Aria Label](https://example.com)")
+}
