@@ -12,13 +12,21 @@ let package = Package(
             targets: ["Remark"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/scinfu/SwiftSoup.git", branch: "master")
+        .package(url: "https://github.com/scinfu/SwiftSoup.git", branch: "master"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", branch: "main")
     ],
     targets: [
         .target(
             name: "Remark",
             dependencies: [
                 "SwiftSoup"
+            ]
+        ),
+        .executableTarget(
+            name: "RemarkCLI",
+            dependencies: [
+                "Remark",
+                .product(name: "ArgumentParser", package: "swift-argument-parser")
             ]
         ),
         .testTarget(
