@@ -141,7 +141,7 @@ extension Remark {
     /// - Parameter element: The element to extract text from
     /// - Returns: The extracted text content according to priority
     /// - Throws: SwiftSoup errors if HTML parsing fails
-    private static func extractLinkText(from element: Element) throws -> String {
+    private static func extractLinkText(from element: Element, pageURL: URL?) throws -> String {
         // 1. Check aria-label
         let ariaLabel = try element.attr("aria-label").trimmingCharacters(in: .whitespacesAndNewlines)
         if !ariaLabel.isEmpty {
@@ -174,7 +174,7 @@ extension Remark {
         
         // 5. Use URL as fallback
         let href = try element.attr("href")
-        return href
+        return resolveURL(href, pageURL: pageURL)
     }
     
     /// Resolves a URL against a base URL.
@@ -244,7 +244,7 @@ extension Remark {
             case "a":
                 let href = try element.attr("href")
                 let resolvedHref = resolveURL(href, pageURL: pageURL)
-                let text = try extractLinkText(from: element)
+                let text = try extractLinkText(from: element, pageURL: pageURL)
                 markdown += "[\(text)](\(resolvedHref))"
                 
             case "img":
