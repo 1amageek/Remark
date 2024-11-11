@@ -30,6 +30,7 @@ struct RemarkCommand: AsyncParsableCommand {
         let fetcher = await MainActor.run { DynamicHTMLFetcher() }
         let html = try await fetcher.fetchHTML(from: inputURL)
         
+        print(html)
         // HTMLのパースとMarkdownへの変換
         let remark = try Remark(html, url: inputURL)
         
