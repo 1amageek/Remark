@@ -1,6 +1,7 @@
 
 
 import Foundation
+import WebKit
 import SwiftSoup
 
 /// A struct for parsing HTML content and extracting data into Markdown, with support for front matter metadata such as title, description, and Open Graph (OG) data.
