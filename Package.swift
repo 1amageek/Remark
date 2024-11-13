@@ -10,6 +10,9 @@ let package = Package(
         .library(
             name: "Remark",
             targets: ["Remark"]),
+        .library(
+            name: "RemarkUI",
+            targets: ["RemarkUI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", branch: "master"),
@@ -20,6 +23,12 @@ let package = Package(
             name: "Remark",
             dependencies: [
                 "SwiftSoup"
+            ]
+        ),
+        .target(
+            name: "RemarkUI",
+            dependencies: [
+                "Remark"
             ]
         ),
         .executableTarget(
