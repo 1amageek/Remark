@@ -27,15 +27,7 @@ struct RemarkCommand: AsyncParsableCommand {
         }
         
         let remark = try await Remark.fetch(from: inputURL)
-        if plainText {
-            print(remark.body)
-        } else {
-            if includeFrontMatter {
-                print(remark.page)
-            } else {
-                print(remark.markdown)
-            }
-        }
+        print(remark.page)
     }
 }
 
