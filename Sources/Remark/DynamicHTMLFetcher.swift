@@ -2,19 +2,32 @@ import WebKit
 import Foundation
 
 /// A class that fetches and monitors HTML content from web pages using WebKit.
-/// This class provides both one-time fetching and continuous monitoring capabilities.
+/// This class supports both single-fetch and streaming modes for dynamic content observation.
 @MainActor
-public class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
+class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
+    /// Internal WebView instance used for content fetching
     private var webView: WKWebView?
+    
+    /// Completion handler for single-fetch operations
     private var completionHandler: ((Result<String, Error>) -> Void)?
+    
+    /// Current referer URL for the request
     private var currentReferer: URL?
+    
+    /// Timer for checking content changes
     private var contentCheckTimer: Timer?
+    
+    /// Previously fetched HTML content
     private var previousHTML: String?
+    
+    /// Counter for tracking stable content occurrences
     private var stableContentCount = 0
+    
+    /// Continuation for streaming content updates
     private var contentStreamContinuation: AsyncStream<String>.Continuation?
     
-    /// Generates a browser-like User-Agent string based on the current platform and system information.
-    /// - Returns: A string containing the User-Agent header value.
+    /// Generates a browser-like User-Agent string based on the current platform
+    /// - Returns: A formatted User-Agent string
     private static func generateUserAgent() -> String {
         let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
         let osVersionFormatted = osVersion.replacingOccurrences(of: "Version ", with: "")
@@ -33,11 +46,10 @@ public class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Send
         return "Mozilla/5.0 (\(platform)) \(webKitVersion) (KHTML, like Gecko) Safari/\(webKitVersion.components(separatedBy: "/").last ?? "537.36")"
     }
     
-    /// Generates the Accept-Language header value based on system language preferences.
-    /// - Returns: A string containing the Accept-Language header value.
+    /// Generates the Accept-Language header based on system preferences
+    /// - Returns: A formatted Accept-Language string
     private static func generateAcceptLanguage() -> String {
         let languages = Locale.preferredLanguages
-        
         let languagesWithQuality = languages.enumerated().map { index, language -> String in
             let quality = 1.0 - (Double(index) * 0.1)
             if index == 0 {
@@ -46,66 +58,28 @@ public class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Send
                 return "\(language);q=\(String(format: "%.1f", quality))"
             }
         }
-        
         return languagesWithQuality.joined(separator: ",")
     }
     
-    /// Fetches HTML content from a specified URL with optional referrer and timeout settings.
+    /// Creates an async stream of HTML content that monitors changes until content stabilizes
     /// - Parameters:
-    ///   - url: The URL to fetch HTML content from
-    ///   - referer: Optional referrer URL to include in the request headers
-    ///   - timeout: Maximum time to wait for stable content in seconds (default: 30)
-    /// - Returns: A string containing the HTML content
-    /// - Throws: An error if the fetch operation fails or times out
-    public func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 30) async throws -> String {
-        self.currentReferer = referer
-        
-        return try await withCheckedThrowingContinuation { continuation in
-            setupWebView()
-            completionHandler = { result in
-                continuation.resume(with: result)
-            }
-            
-            var request = URLRequest(url: url)
-            let userAgent = Self.generateUserAgent()
-            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-            
-            if let referer = referer {
-                request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
-            }
-            
-            request.setValue(Self.generateAcceptLanguage(), forHTTPHeaderField: "Accept-Language")
-            request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", forHTTPHeaderField: "Accept")
-            request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
-            
-            webView?.customUserAgent = userAgent
-            
-            let preferences = WKWebpagePreferences()
-            preferences.allowsContentJavaScript = true
-            webView?.configuration.defaultWebpagePreferences = preferences
-            
-            webView?.load(request)
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
-                self?.contentCheckTimer?.invalidate()
-                if let html = self?.previousHTML {
-                    self?.completionHandler?(.success(html))
-                } else {
-                    self?.completionHandler?(.failure(ValidationError("Timeout waiting for stable content")))
-                }
-            }
-        }
-    }
-    
-    /// Creates an async stream that emits HTML content whenever the page content changes.
-    /// - Parameters:
-    ///   - url: The URL to monitor for HTML content changes
-    ///   - referer: Optional referrer URL to include in the request headers
-    ///   - checkInterval: The interval in seconds between content checks (default: 0.35)
-    /// - Returns: An AsyncStream that emits String values containing HTML content
-    public func contentCheckStream(from url: URL, referer: URL? = nil, checkInterval: TimeInterval = 0.35) -> AsyncStream<String> {
+    ///   - url: The URL to fetch content from
+    ///   - referer: Optional referer URL for the request
+    ///   - checkInterval: Time interval between content checks in seconds
+    ///   - requiredStableCount: Number of consecutive identical content checks required to consider content stable
+    ///   - timeout: Maximum time to wait for content stabilization in seconds
+    /// - Returns: An AsyncStream of HTML content strings
+    func contentCheckStream(
+        from url: URL,
+        referer: URL? = nil,
+        checkInterval: TimeInterval = 0.35,
+        requiredStableCount: Int = 3,
+        timeout: TimeInterval = 30
+    ) -> AsyncStream<String> {
         return AsyncStream { continuation in
             self.contentStreamContinuation = continuation
+            var localPreviousHTML: String?
+            var localStableCount = 0
             
             Task { @MainActor in
                 self.currentReferer = referer
@@ -128,14 +102,81 @@ public class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Send
                 
                 contentCheckTimer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
                     Task { @MainActor in
-                        await self?.checkContentForStream()
+                        guard let webView = self?.webView else { return }
+                        
+                        do {
+                            let currentHTML = try await webView.evaluateJavaScript("document.documentElement.outerHTML") as? String
+                            if let html = currentHTML {
+                                continuation.yield(html)
+                                
+                                if html == localPreviousHTML {
+                                    localStableCount += 1
+                                    if localStableCount >= requiredStableCount {
+                                        self?.contentCheckTimer?.invalidate()
+                                        continuation.finish()
+                                    }
+                                } else {
+                                    localStableCount = 0
+                                    localPreviousHTML = html
+                                }
+                            }
+                        } catch {
+                            continuation.finish()
+                        }
                     }
+                }
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                    self?.contentCheckTimer?.invalidate()
+                    continuation.finish()
                 }
             }
         }
     }
     
-    /// Sets up the WKWebView instance with appropriate configuration.
+    /// Fetches HTML content from a URL and waits for content to stabilize
+    /// - Parameters:
+    ///   - url: The URL to fetch content from
+    ///   - referer: Optional referer URL for the request
+    ///   - timeout: Maximum time to wait for content stabilization in seconds
+    /// - Returns: The stabilized HTML content
+    /// - Throws: An error if the fetch fails or times out
+    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 30) async throws -> String {
+        self.currentReferer = referer
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            setupWebView()
+            completionHandler = { result in
+                continuation.resume(with: result)
+            }
+            
+            var request = URLRequest(url: url)
+            let userAgent = Self.generateUserAgent()
+            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+            
+            if let referer = referer {
+                request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
+            }
+            
+            request.setValue(Self.generateAcceptLanguage(), forHTTPHeaderField: "Accept-Language")
+            request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", forHTTPHeaderField: "Accept")
+            request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
+            
+            webView?.customUserAgent = userAgent
+            webView?.load(request)
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                self?.contentCheckTimer?.invalidate()
+                if let html = self?.previousHTML {
+                    self?.completionHandler?(.success(html))
+                } else {
+                    self?.completionHandler?(.failure(ValidationError("Timeout waiting for stable content")))
+                }
+            }
+        }
+    }
+    
+    /// Sets up the WebKit configuration and creates the WebView
     private func setupWebView() {
         let configuration = WKWebViewConfiguration()
         configuration.applicationNameForUserAgent = Self.generateUserAgent()
@@ -149,22 +190,9 @@ public class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Send
         webView?.navigationDelegate = self
     }
     
-    /// Performs content check for the stream and emits new HTML content.
-    private func checkContentForStream() async {
-        guard let webView = webView else { return }
-        
-        do {
-            let currentHTML = try await webView.evaluateJavaScript("document.documentElement.outerHTML") as? String
-            if let html = currentHTML {
-                contentStreamContinuation?.yield(html)
-            }
-        } catch {
-            contentStreamContinuation?.finish()
-        }
-    }
+    // MARK: - WKNavigationDelegate Methods
     
-    /// Handles the completion of web page loading.
-    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         contentCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.checkContentStability(webView)
@@ -172,7 +200,8 @@ public class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Send
         }
     }
     
-    /// Checks if the content has stabilized by comparing consecutive HTML snapshots.
+    /// Checks if the content has stabilized
+    /// - Parameter webView: The WebView instance to check
     private func checkContentStability(_ webView: WKWebView) {
         webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, error in
             guard let self = self else { return }
@@ -202,13 +231,11 @@ public class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Send
         }
     }
     
-    /// Handles navigation failures.
-    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         contentCheckTimer?.invalidate()
         completionHandler?(.failure(error))
     }
     
-    /// Handles navigation policy decisions.
     private func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
@@ -226,8 +253,7 @@ public class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Send
         decisionHandler(.allow)
     }
     
-    /// Handles provisional navigation failures.
-    public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         contentCheckTimer?.invalidate()
         completionHandler?(.failure(error))
     }
@@ -240,14 +266,14 @@ public class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Send
     }
 }
 
-/// Represents validation errors that can occur during HTML fetching.
-public struct ValidationError: Error {
-    /// The error message describing the validation failure.
-    public let message: String
+/// Error type for validation failures
+struct ValidationError: Error {
+    /// Error message describing the validation failure
+    let message: String
     
-    /// Creates a new validation error with the specified message.
-    /// - Parameter message: A description of the validation error
-    public init(_ message: String) {
+    /// Creates a new validation error
+    /// - Parameter message: Description of the error
+    init(_ message: String) {
         self.message = message
     }
 }
