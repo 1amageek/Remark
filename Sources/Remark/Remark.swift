@@ -52,7 +52,13 @@ public struct Remark: Sendable {
 }
 
 extension Remark {
-    
+    /// Fetches and parses HTML content from a given URL.
+    /// - Parameter url: The URL to fetch the HTML content from.
+    /// - Returns: A `Remark` instance containing the parsed HTML content with metadata and Markdown conversion.
+    /// - Throws: An error if the HTML content cannot be fetched or parsed.
+    ///
+    /// This method creates a dynamic HTML fetcher on the main actor, fetches the HTML content,
+    /// and initializes a new `Remark` instance with the fetched content.
     public static func fetch(from url: URL) async throws -> Remark {
         let fetcher = await MainActor.run { DynamicHTMLFetcher() }
         let html = try await fetcher.fetchHTML(from: url)
