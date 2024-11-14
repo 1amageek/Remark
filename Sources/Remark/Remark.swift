@@ -24,6 +24,9 @@ public struct Remark: Sendable {
     /// The Markdown representation of the main content of the HTML.
     public let markdown: String
     
+    /// The raw HTML
+    public let html: String
+    
     /// Initializes a `Remark` instance by parsing the provided HTML.
     /// - Parameters:
     ///   - html: The HTML string to be parsed.
@@ -31,6 +34,7 @@ public struct Remark: Sendable {
     /// - Throws: An error if the HTML cannot be parsed.
     public init(_ html: String, url: URL? = nil) throws {
         self.url = url
+        self.html = html
         let doc = try SwiftSoup.parse(html)
         
         // Extract title, description, and Open Graph data
