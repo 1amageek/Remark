@@ -26,12 +26,7 @@ struct RemarkCommand: AsyncParsableCommand {
             throw ValidationError("Invalid URL provided")
         }
         
-        // HTMLの取得
-        let fetcher = await MainActor.run { DynamicHTMLFetcher() }
-        let html = try await fetcher.fetchHTML(from: inputURL)
-        // HTMLのパースとMarkdownへの変換
-        let remark = try Remark(html, url: inputURL)
-        
+        let remark = try await Remark.fetch(from: inputURL)
         if plainText {
             print(remark.body)
         } else {

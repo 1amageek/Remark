@@ -53,6 +53,16 @@ public struct Remark: Sendable {
 
 extension Remark {
     
+    public static func fetch(from url: URL) async throws -> Remark {
+        let fetcher = await MainActor.run { DynamicHTMLFetcher() }
+        let html = try await fetcher.fetchHTML(from: url)
+        let remark = try Remark(html, url: url)
+        return remark
+    }
+}
+
+extension Remark {
+    
     /// Extracts the title from the HTML document.
     /// - Parameter doc: The HTML document.
     /// - Returns: The title as a string.
