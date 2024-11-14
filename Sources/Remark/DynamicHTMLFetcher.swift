@@ -184,9 +184,22 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
         let preferences = WKWebpagePreferences()
         preferences.allowsContentJavaScript = true
         configuration.defaultWebpagePreferences = preferences
-        configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         
+#if os(macOS)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        
+        webView = WKWebView(frame: window.contentView!.bounds, configuration: configuration)
+        window.contentView?.addSubview(webView!)
+#else
         webView = WKWebView(frame: .zero, configuration: configuration)
+#endif
+        
         webView?.navigationDelegate = self
     }
     
