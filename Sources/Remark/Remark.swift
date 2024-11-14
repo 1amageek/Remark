@@ -68,6 +68,95 @@ extension Remark {
 }
 
 extension Remark {
+    /// Creates an async stream that emits `Remark` instances whenever the page content changes.
+    /// - Parameters:
+    ///   - url: The URL to monitor for HTML content changes.
+    ///   - checkInterval: The interval in seconds between content checks (default: 0.35).
+    /// - Returns: An AsyncStream that emits `Remark` instances containing the parsed HTML content with metadata and Markdown conversion.
+    ///
+    /// This method creates a dynamic HTML fetcher on the main actor and monitors the HTML content for changes.
+    /// Each time the content changes, it creates a new `Remark` instance with the updated content.
+    ///
+    /// Example usage:
+    /// ```swift
+    /// for await remark in await Remark.stream(from: url) {
+    ///     print("Title: \(remark.title)")
+    ///     print("Content: \(remark.markdown)")
+    /// }
+    /// ```
+    public static func stream(
+        from url: URL,
+        checkInterval: TimeInterval = 0.35
+    ) -> AsyncStream<Result<Remark, Error>> {
+        AsyncStream { continuation in
+            Task {
+                let fetcher = await MainActor.run { DynamicHTMLFetcher() }
+                let htmlStream = await fetcher.contentCheckStream(
+                    from: url,
+                    checkInterval: checkInterval
+                )                
+                for await html in htmlStream {
+                    do {
+                        let remark = try Remark(html, url: url)
+                        continuation.yield(.success(remark))
+                    } catch {
+                        continuation.yield(.failure(error))
+                    }
+                }
+                
+                continuation.finish()
+            }
+        }
+    }
+    
+    /// Creates an async stream that emits `Remark` instances whenever the page content changes,
+    /// throwing an error if parsing fails.
+    /// - Parameters:
+    ///   - url: The URL to monitor for HTML content changes.
+    ///   - checkInterval: The interval in seconds between content checks (default: 0.35).
+    /// - Returns: An AsyncStream that emits `Remark` instances.
+    /// - Throws: An error if HTML parsing fails.
+    ///
+    /// This method is similar to `stream(from:checkInterval:)` but throws errors instead of wrapping
+    /// results in a Result type.
+    ///
+    /// Example usage:
+    /// ```swift
+    /// do {
+    ///     for try await remark in await Remark.throwingStream(from: url) {
+    ///         print("Title: \(remark.title)")
+    ///         print("Content: \(remark.markdown)")
+    ///     }
+    /// } catch {
+    ///     print("Error: \(error)")
+    /// }
+    /// ```
+    public static func throwingStream(
+        from url: URL,
+        checkInterval: TimeInterval = 0.35
+    ) -> AsyncThrowingStream<Remark, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                let fetcher = await MainActor.run { DynamicHTMLFetcher() }
+                let htmlStream = await fetcher.contentCheckStream(
+                    from: url,
+                    checkInterval: checkInterval
+                )
+                do {
+                    for await html in htmlStream {
+                        let remark = try Remark(html, url: url)
+                        continuation.yield(remark)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+}
+
+extension Remark {
     
     /// Extracts the title from the HTML document.
     /// - Parameter doc: The HTML document.
