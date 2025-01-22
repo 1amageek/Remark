@@ -547,33 +547,23 @@ extension Remark {
 }
 
 extension Remark {
-    /// Media type for sections content
-    public enum Media: Equatable {
-        /// An image with URL and alt text
-        case image(url: String, alt: String)
-        /// A video with URL
-        case video(url: String)
-        /// No media
-        case none
-    }
-    
-    /// A section of markdown content
-    public struct Section: Equatable {
-        /// The markdown text content
-        public let content: String
-        /// The first media element found in the section
-        public let media: Media
+    /// Extracts all links from the HTML content.
+    /// - Returns: An array of Link objects found in the HTML.
+    /// - Throws: An error if link extraction fails.
+    public func extractLinks() throws -> [Link] {
+        let doc = try SwiftSoup.parse(html)
+        let linkElements = try doc.select("a")
         
-        /// Creates a new section with content and media
-        /// - Parameters:
-        ///   - content: The markdown text content
-        ///   - media: The first media element found in the section
-        public init(content: String, media: Media) {
-            self.content = content
-            self.media = media
+        return try linkElements.array().compactMap { element in
+            let href = try element.attr("href")
+            let resolvedHref = Self.resolveURL(href, pageURL: url)
+            let text = try Self.extractLinkText(from: element, pageURL: url)
+            return Link(url: resolvedHref, text: text)
         }
     }
+}
 
+extension Remark {
     /// Returns the heading level from a given line of text.
     /// - Parameter line: The line of text to examine.
     /// - Returns: The heading level (1-6) if the line is a valid Markdown heading, or `nil` if it's not.
