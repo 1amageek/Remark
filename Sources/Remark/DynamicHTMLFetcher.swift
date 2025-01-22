@@ -4,7 +4,7 @@ import Foundation
 /// A class that fetches and monitors HTML content from web pages using WebKit.
 /// This class supports both single-fetch and streaming modes for dynamic content observation.
 @MainActor
-class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
+class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @unchecked Sendable {
     /// Internal WebView instance used for content fetching
     private var webView: WKWebView?
     

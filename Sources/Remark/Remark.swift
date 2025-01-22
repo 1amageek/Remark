@@ -52,6 +52,12 @@ public struct Remark: Sendable {
 }
 
 extension Remark {
+    
+    public enum FetchMethod: CaseIterable {
+        case `default`   // Basic HTTP fetch
+        case interactive // Fetches with JavaScript execution
+    }
+    
     /// Fetches and parses HTML content from a given URL.
     /// - Parameter url: The URL to fetch the HTML content from.
     /// - Returns: A `Remark` instance containing the parsed HTML content with metadata and Markdown conversion.
@@ -59,11 +65,18 @@ extension Remark {
     ///
     /// This method creates a dynamic HTML fetcher on the main actor, fetches the HTML content,
     /// and initializes a new `Remark` instance with the fetched content.
-    public static func fetch(from url: URL) async throws -> Remark {
-        let fetcher = await MainActor.run { DynamicHTMLFetcher() }
-        let html = try await fetcher.fetchHTML(from: url)
-        let remark = try Remark(html, url: url)
-        return remark
+    public static func fetch(from url: URL, method: FetchMethod = .default) async throws -> Remark {
+        let html = try await {
+            switch method {
+            case .interactive:
+                let fetcher = await MainActor.run { DynamicHTMLFetcher() }
+                return try await fetcher.fetchHTML(from: url)
+            case .default:
+                let fetcher = HTMLFetcher()
+                return try await fetcher.fetchHTML(from: url)
+            }
+        }()
+        return try Remark(html, url: url)
     }
 }
 
