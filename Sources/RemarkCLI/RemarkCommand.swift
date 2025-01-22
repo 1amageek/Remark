@@ -27,7 +27,7 @@ struct RemarkCommand: AsyncParsableCommand {
         }
         
         let remark = try await Remark.fetch(from: inputURL)
-        print(remark.page)
+        print(remark.markdown)
     }
 }
 

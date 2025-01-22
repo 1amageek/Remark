@@ -61,18 +61,18 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
         return languagesWithQuality.joined(separator: ",")
     }
     
-    /// Creates an async stream of HTML content that monitors changes until content stabilizes
+    /// Creates an async stream of HTML content that monitors changes until content stabilizes.
     /// - Parameters:
-    ///   - url: The URL to fetch content from
-    ///   - referer: Optional referer URL for the request
-    ///   - checkInterval: Time interval between content checks in seconds
-    ///   - requiredStableCount: Number of consecutive identical content checks required to consider content stable
-    ///   - timeout: Maximum time to wait for content stabilization in seconds
-    /// - Returns: An AsyncStream of HTML content strings
+    ///   - url: The URL to fetch content from.
+    ///   - referer: Optional referer URL for the request.
+    ///   - checkInterval: Time interval between content checks in seconds.
+    ///   - requiredStableCount: Number of consecutive identical content checks required to consider content stable.
+    ///   - timeout: Maximum time to wait for content stabilization in seconds.
+    /// - Returns: An AsyncStream of HTML content strings.
     func contentCheckStream(
         from url: URL,
         referer: URL? = nil,
-        checkInterval: TimeInterval = 0.35,
+        checkInterval: TimeInterval = 0.4,
         requiredStableCount: Int = 3,
         timeout: TimeInterval = 30
     ) -> AsyncStream<String> {
@@ -100,6 +100,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
                 webView?.customUserAgent = userAgent
                 webView?.load(request)
                 
+                // Periodically check HTML content using a timer.
                 contentCheckTimer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
                     Task { @MainActor in
                         guard let webView = self?.webView else { return }
@@ -126,6 +127,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
                     }
                 }
                 
+                // Finish the stream after the timeout.
                 DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
                     self?.contentCheckTimer?.invalidate()
                     continuation.finish()
@@ -134,20 +136,23 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
         }
     }
     
-    /// Fetches HTML content from a URL and waits for content to stabilize
+    /// Fetches HTML content from a URL and waits for content to stabilize.
     /// - Parameters:
-    ///   - url: The URL to fetch content from
-    ///   - referer: Optional referer URL for the request
-    ///   - timeout: Maximum time to wait for content stabilization in seconds
-    /// - Returns: The stabilized HTML content
-    /// - Throws: An error if the fetch fails or times out
+    ///   - url: The URL to fetch content from.
+    ///   - referer: Optional referer URL for the request.
+    ///   - timeout: Maximum time to wait for content stabilization in seconds.
+    /// - Returns: The stabilized HTML content.
+    /// - Throws: An error if the fetch fails or times out.
     func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 30) async throws -> String {
         self.currentReferer = referer
         
         return try await withCheckedThrowingContinuation { continuation in
             setupWebView()
-            completionHandler = { result in
+            
+            // Wrap the completion handler to ensure it is called only once.
+            completionHandler = { [weak self] result in
                 continuation.resume(with: result)
+                self?.completionHandler = nil
             }
             
             var request = URLRequest(url: url)
@@ -165,18 +170,22 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
             webView?.customUserAgent = userAgent
             webView?.load(request)
             
+            // Handle timeout logic.
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
-                self?.contentCheckTimer?.invalidate()
-                if let html = self?.previousHTML {
-                    self?.completionHandler?(.success(html))
-                } else {
-                    self?.completionHandler?(.failure(ValidationError("Timeout waiting for stable content")))
+                guard let strongSelf = self else { return }
+                strongSelf.contentCheckTimer?.invalidate()
+                
+                // Ensure the completion handler is called if it hasn't already been called.
+                if let html = strongSelf.previousHTML, let handler = strongSelf.completionHandler {
+                    handler(.success(html))
+                } else if let handler = strongSelf.completionHandler {
+                    handler(.failure(ValidationError("Timeout waiting for stable content")))
                 }
             }
         }
     }
     
-    /// Sets up the WebKit configuration and creates the WebView
+    /// Sets up the WebKit configuration and creates the WebView.
     private func setupWebView() {
         let configuration = WKWebViewConfiguration()
         configuration.applicationNameForUserAgent = Self.generateUserAgent()
@@ -206,28 +215,36 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
     // MARK: - WKNavigationDelegate Methods
     
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        contentCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
+        // Start periodic checks every 2 seconds when the page finishes loading.
+        contentCheckTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.checkContentStability(webView)
             }
         }
     }
     
-    /// Checks if the content has stabilized
-    /// - Parameter webView: The WebView instance to check
+    /// Checks if the content has stabilized.
+    /// - Parameter webView: The WebView instance to check.
     private func checkContentStability(_ webView: WKWebView) {
         webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, error in
             guard let self = self else { return }
             
             if let error = error {
                 self.contentCheckTimer?.invalidate()
-                self.completionHandler?(.failure(error))
+                // Ensure the completion handler is called if an error occurs.
+                if let handler = self.completionHandler {
+                    handler(.failure(error))
+                    self.completionHandler = nil
+                }
                 return
             }
             
             guard let currentHTML = result as? String else {
                 self.contentCheckTimer?.invalidate()
-                self.completionHandler?(.failure(ValidationError("Could not extract HTML content")))
+                if let handler = self.completionHandler {
+                    handler(.failure(ValidationError("Could not extract HTML content")))
+                    self.completionHandler = nil
+                }
                 return
             }
             
@@ -235,7 +252,10 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
                 self.stableContentCount += 1
                 if self.stableContentCount >= 3 {
                     self.contentCheckTimer?.invalidate()
-                    self.completionHandler?(.success(currentHTML))
+                    if let handler = self.completionHandler {
+                        handler(.success(currentHTML))
+                        self.completionHandler = nil
+                    }
                 }
             } else {
                 self.stableContentCount = 0
@@ -246,7 +266,10 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
     
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         contentCheckTimer?.invalidate()
-        completionHandler?(.failure(error))
+        if let handler = completionHandler {
+            handler(.failure(error))
+            completionHandler = nil
+        }
     }
     
     private func webView(
@@ -268,11 +291,17 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, @unchecked Sendable {
     
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         contentCheckTimer?.invalidate()
-        completionHandler?(.failure(error))
+        if let handler = completionHandler {
+            handler(.failure(error))
+            completionHandler = nil
+        }
     }
     
     deinit {
+        // Finish the stream mode properly when the object is deallocated.
         contentStreamContinuation?.finish()
+        
+        // Invalidate the timer if still active.
         DispatchQueue.main.sync {
             contentCheckTimer?.invalidate()
         }
@@ -284,8 +313,8 @@ struct ValidationError: Error {
     /// Error message describing the validation failure
     let message: String
     
-    /// Creates a new validation error
-    /// - Parameter message: Description of the error
+    /// Creates a new validation error.
+    /// - Parameter message: Description of the error.
     init(_ message: String) {
         self.message = message
     }
