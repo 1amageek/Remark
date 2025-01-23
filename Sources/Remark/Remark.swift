@@ -560,6 +560,16 @@ extension Remark {
 }
 
 extension Remark {
+    
+    public var plainText: String {
+        let pattern = /\[(.*?)\]\(.*?\)/
+        return markdown.replacing(pattern) { match in
+            String(match.1)
+        }
+    }
+}
+
+extension Remark {
     /// Extracts all links from the HTML content.
     /// - Returns: An array of Link objects found in the HTML.
     /// - Throws: An error if link extraction fails.
