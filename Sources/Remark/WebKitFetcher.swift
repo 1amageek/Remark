@@ -10,17 +10,27 @@ public class WebKitFetcher: HTMLFetching, @unchecked Sendable {
     private let processPool = WKProcessPool() // プロセスプールを共有
     
     public init() {
+        ProcessInfo.processInfo.automaticTerminationSupportEnabled = true
+        
         let configuration = WKWebViewConfiguration()
         configuration.processPool = processPool
-        configuration.websiteDataStore = .default()
+        configuration.defaultWebpagePreferences = WKWebpagePreferences()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         
-        if #available(iOS 14.0, *) {
-            configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-            configuration.limitsNavigationsToAppBoundDomains = false
-        }
+#if os(macOS)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
         
+        self.webView = WKWebView(frame: window.contentView!.bounds, configuration: configuration)
+        window.contentView?.addSubview(self.webView)
+#else
         self.webView = WKWebView(frame: .zero, configuration: configuration)
-        self.webView.setValue(false, forKey: "drawsBackground") // 背景描画の最適化
+#endif
     }
     
     deinit {
