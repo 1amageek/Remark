@@ -582,7 +582,12 @@ extension Remark {
         let linkElements = try doc.select("a")
         
         return try linkElements.array().compactMap { element in
-            let href = try element.attr("href")
+            let href = try element.attr("href")            
+            guard let url = URL(string: href),
+                  let scheme = url.scheme?.lowercased(),
+                  ["http", "https", "ftp", "sftp", "ssh", "git", "news", "irc", "ws", "wss"].contains(scheme)
+            else { return nil }
+            
             let resolvedHref = Self.resolveURL(href, pageURL: url)
             let text = try Self.extractLinkText(from: element, pageURL: url)
             return Link(url: resolvedHref, text: text)
