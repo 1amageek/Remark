@@ -38,7 +38,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
     func contentCheckStream(
         from url: URL,
         referer: URL? = nil,
-        checkInterval: TimeInterval = 0.2,
+        checkInterval: TimeInterval = 0.15,
         requiredStableCount: Int = 3,
         timeout: TimeInterval = 30
     ) -> AsyncStream<String> {
