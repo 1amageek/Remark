@@ -69,7 +69,7 @@ extension Remark {
         let html = try await {
             switch method {
             case .interactive:
-                let fetcher = await MainActor.run { DynamicHTMLFetcher() }
+                let fetcher = await MainActor.run { WebKitFetcher() }
                 return try await fetcher.fetchHTML(from: url)
             case .default:
                 let fetcher = HTMLFetcher()

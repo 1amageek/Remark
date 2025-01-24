@@ -41,7 +41,9 @@ public struct RemarkView: View {
             }
         }
         .task {
-            try? await viewModel.fetch()
+            try? await measure(label: "fetch() 実行時間") {
+                try? await viewModel.fetch()
+            }
         }
     }
 }
@@ -65,11 +67,25 @@ extension String {
     }
 }
 
+/// 実行時間を計測するユーティリティ関数
+/// - Parameters:
+///   - label: 計測結果に付けるラベル（任意）
+///   - block: 実行したい処理
+/// - Returns: 処理結果（戻り値がある場合）
+func measure<T>(label: String = "Execution Time", block: @Sendable () async throws -> T) async rethrows -> T {
+    let startTime = Date() // 計測開始時刻
+    let result = try await block() // 測定対象の処理を実行
+    let endTime = Date() // 計測終了時刻
+    let elapsedTime = endTime.timeIntervalSince(startTime) // 経過時間を計算
+    print("\(label): \(String(format: "%.2f 秒", elapsedTime))")
+    return result
+}
+
 
 @Observable
 class ViewModel: @unchecked Sendable {
     
-    var url: String = "https://www.apple.com/iphone/"
+    var url: String = "https://www.google.com/search?q=%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3"
     
     var content: String = ""
     
@@ -85,20 +101,31 @@ class ViewModel: @unchecked Sendable {
         guard let url = URL(string: url) else {
             return
         }
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            return
-        }
-        guard (200...299).contains(httpResponse.statusCode) else {
-            return
-        }
-        guard let webpage = String(data: data, encoding: .utf8) else {
-            return
-        }
+        let fetcher = await WebKitFetcher()
+        let webpage = try await fetcher.fetchHTML(from: url)
         self.remark = try Remark(webpage, url: url)
         self.content = self.remark?.page ?? ""
         self.sections = self.remark?.sections(with: 2) ?? []
     }
+    
+//    func fetch() async throws {
+//        guard let url = URL(string: url) else {
+//            return
+//        }
+//        let (data, response) = try await URLSession.shared.data(from: url)
+//        guard let httpResponse = response as? HTTPURLResponse else {
+//            return
+//        }
+//        guard (200...299).contains(httpResponse.statusCode) else {
+//            return
+//        }
+//        guard let webpage = String(data: data, encoding: .utf8) else {
+//            return
+//        }
+//        self.remark = try Remark(webpage, url: url)
+//        self.content = self.remark?.page ?? ""
+//        self.sections = self.remark?.sections(with: 2) ?? []
+//    }
 }
 
 #Preview {

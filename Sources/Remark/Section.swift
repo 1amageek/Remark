@@ -7,19 +7,21 @@
 
 import Foundation
 
-/// A section of markdown content
-public struct Section: Equatable {
-    /// The markdown text content
-    public let content: String
-    /// The first media element found in the section
-    public let media: Media
-    
-    /// Creates a new section with content and media
-    /// - Parameters:
-    ///   - content: The markdown text content
-    ///   - media: The first media element found in the section
-    public init(content: String, media: Media) {
-        self.content = content
-        self.media = media
+extension Remark {
+    /// A section of markdown content
+    public struct Section: Equatable, Sendable {
+        /// The markdown text content
+        public let content: String
+        /// The first media element found in the section
+        public let media: Media
+        
+        /// Creates a new section with content and media
+        /// - Parameters:
+        ///   - content: The markdown text content
+        ///   - media: The first media element found in the section
+        public init(content: String, media: Media) {
+            self.content = content
+            self.media = media
+        }
     }
 }

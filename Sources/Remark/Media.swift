@@ -8,7 +8,7 @@
 import Foundation
 
 /// Media type for sections content
-public enum Media: Equatable {
+public enum Media: Equatable, Sendable {
     /// An image with URL and alt text
     case image(url: String, alt: String)
     /// A video with URL
