@@ -16,6 +16,8 @@ public class WebKitFetcher: HTMLFetching, @unchecked Sendable {
         configuration.processPool = processPool
         configuration.defaultWebpagePreferences = WKWebpagePreferences()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.suppressesIncrementalRendering = false
         
 #if os(macOS)
         let window = NSWindow(
