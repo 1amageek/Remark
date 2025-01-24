@@ -455,6 +455,7 @@ extension Remark {
         
         let items = try element.select("> li")
         let indent = String(repeating: "  ", count: indentLevel)
+        
         for (index, item) in items.array().enumerated() {
             let prefix = isOrdered ? "\(index + 1). " : "- "
             let childNodes = item.getChildNodes().filter { node in
@@ -469,23 +470,26 @@ extension Remark {
                 content += try convertNodeToMarkdown(child, pageURL: pageURL)
             }
             
-            let itemContent = "\(prefix)\(content)".trimmingCharacters(in: .whitespacesAndNewlines)
-            markdown += "\(indent)\(itemContent)"
-            
-            let childUlLists = try item.select("> ul")
-            let childOlLists = try item.select("> ol")
-            let childLists = childUlLists.array() + childOlLists.array()
-            
-            if !childLists.isEmpty {
-                markdown += "\n"
-                for childList in childLists {
-                    let isChildOrdered = childList.tagName() == "ol"
-                    markdown += try convertListToMarkdown(childList, isOrdered: isChildOrdered, indentLevel: indentLevel + 1, pageURL: pageURL)
+            content = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !content.isEmpty {
+                let itemContent = "\(prefix)\(content)"
+                markdown += "\(indent)\(itemContent)"
+                
+                let childUlLists = try item.select("> ul")
+                let childOlLists = try item.select("> ol")
+                let childLists = childUlLists.array() + childOlLists.array()
+                
+                if !childLists.isEmpty {
+                    markdown += "\n"
+                    for childList in childLists {
+                        let isChildOrdered = childList.tagName() == "ol"
+                        markdown += try convertListToMarkdown(childList, isOrdered: isChildOrdered, indentLevel: indentLevel + 1, pageURL: pageURL)
+                    }
                 }
-            }
-            
-            if index < items.array().count - 1 {
-                markdown += "\n"
+                
+                if index < items.array().count - 1 {
+                    markdown += "\n"
+                }
             }
         }
         
