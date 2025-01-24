@@ -5,22 +5,13 @@ import WebKit
 /// This class is `@MainActor` to ensure safe usage of `WKWebView` and other UI elements.
 @MainActor
 public class WebKitFetcher: HTMLFetching, @unchecked Sendable {
-    
     private var webView: WKWebView
     private var navigationDelegate: NavigationDelegate?
     
-    /// Initializes a new instance of `WebKitFetcher`.
     public init() {
         self.webView = WKWebView()
     }
     
-    /// Fetches HTML content from the specified URL with an optional referer and timeout.
-    /// - Parameters:
-    ///   - url: The URL to fetch HTML content from.
-    ///   - referer: An optional referer URL to include in the request.
-    ///   - timeout: The timeout duration in seconds for the operation.
-    /// - Returns: The fetched HTML content as a `String`.
-    /// - Throws: An error if the fetch operation fails or times out.
     public func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 15) async throws -> String {
         return try await withTimeout(timeout: timeout) { [weak self] in
             guard let self = self else {
@@ -30,12 +21,6 @@ public class WebKitFetcher: HTMLFetching, @unchecked Sendable {
         }
     }
     
-    /// Performs the actual HTML fetching process.
-    /// - Parameters:
-    ///   - url: The URL to fetch HTML content from.
-    ///   - referer: An optional referer URL to include in the request.
-    /// - Returns: The fetched HTML content as a `String`.
-    /// - Throws: An error if the fetch operation fails.
     private func performFetchHTML(from url: URL, referer: URL?) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             // Create a URL request
@@ -46,15 +31,21 @@ public class WebKitFetcher: HTMLFetching, @unchecked Sendable {
             
             // Set up the navigation delegate
             let delegate = NavigationDelegate { [weak self] result in
-                self?.navigationDelegate = nil // Release the delegate
+                guard let self = self else {
+                    continuation.resume(throwing: TimeoutError())
+                    return
+                }
+                self.navigationDelegate = nil // Release the delegate
                 switch result {
                 case .success:
                     // Execute JavaScript to retrieve the HTML
-                    self?.webView.evaluateJavaScript("document.documentElement.outerHTML.toString()") { html, error in
+                    self.webView.evaluateJavaScript("document.documentElement.outerHTML") { html, error in
                         if let html = html as? String {
                             continuation.resume(returning: html)
                         } else if let error = error {
                             continuation.resume(throwing: error)
+                        } else {
+                            continuation.resume(throwing: TimeoutError())
                         }
                     }
                 case .failure(let error):
@@ -62,7 +53,7 @@ public class WebKitFetcher: HTMLFetching, @unchecked Sendable {
                 }
             }
             
-            self.navigationDelegate = delegate // Retain the delegate
+            self.navigationDelegate = delegate
             self.webView.navigationDelegate = delegate
             self.webView.load(request)
         }
