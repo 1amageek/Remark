@@ -344,6 +344,11 @@ extension Remark {
         
         return href
     }
+
+    private static let semanticElements = [
+        "main", "section", "nav", "article", "aside",
+        "header", "footer", "figure", "details", "summary"
+    ]
     
     /// Recursively converts a `Node` to Markdown.
     /// - Parameters:
@@ -362,6 +367,17 @@ extension Remark {
             }
         } else if let element = node as? Element {
             let tagName = element.tagName()
+            
+            if semanticElements.contains(tagName) {
+                let content = try element.getChildNodes().map {
+                    try convertNodeToMarkdown($0, quoteLevel: quoteLevel, pageURL: pageURL)
+                }.joined()
+                let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedContent.isEmpty {
+                    return "\n<!-- \(tagName) -->\n\(content)\n<!-- /\(tagName) -->\n"
+                }
+                return content
+            }
             
             switch tagName {
             case "a":
@@ -388,8 +404,11 @@ extension Remark {
                 markdown += "\n" + String(repeating: "#", count: headerLevel) + " " + content + "\n"
                 
             case "p":
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
-                markdown += "\n" + content + "\n"
+                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)                
+                let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedContent.isEmpty {
+                    markdown += "\n" + trimmedContent + "\n"
+                }
                 
             case "ul":
                 let content = try convertListToMarkdown(element, isOrdered: false, pageURL: pageURL)
@@ -432,7 +451,9 @@ extension Remark {
                 markdown += "\n---\n"
                 
             default:
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
+                let content = try element.getChildNodes().map {
+                    try convertNodeToMarkdown($0, quoteLevel: quoteLevel, pageURL: pageURL)
+                }.joined()
                 markdown += content
             }
         }
@@ -582,7 +603,7 @@ extension Remark {
         let linkElements = try doc.select("a")
         
         return try linkElements.array().compactMap { element in
-            let href = try element.attr("href")            
+            let href = try element.attr("href")
             guard let url = URL(string: href),
                   let scheme = url.scheme?.lowercased(),
                   ["http", "https", "ftp", "sftp", "ssh", "git", "news", "irc", "ws", "wss"].contains(scheme)

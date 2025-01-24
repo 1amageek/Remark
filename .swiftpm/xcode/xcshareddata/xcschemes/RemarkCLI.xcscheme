@@ -52,7 +52,7 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "https://www.google.com/search?q=apple"
+            argument = "https://www.apple.com/"
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
