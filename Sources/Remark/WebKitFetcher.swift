@@ -7,39 +7,14 @@ import WebKit
 public class WebKitFetcher: HTMLFetching, @unchecked Sendable {
     private var webView: WKWebView
     private var navigationDelegate: NavigationDelegate?
-    private let processPool = WKProcessPool() // プロセスプールを共有
     
     public init() {
-        ProcessInfo.processInfo.automaticTerminationSupportEnabled = true
-        
         let configuration = WKWebViewConfiguration()
-        configuration.processPool = processPool
         configuration.defaultWebpagePreferences = WKWebpagePreferences()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.websiteDataStore = .nonPersistent()
         configuration.suppressesIncrementalRendering = false
-        
-#if os(macOS)
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
-            styleMask: [],
-            backing: .buffered,
-            defer: false
-        )
-        window.isReleasedWhenClosed = false
-        
-        self.webView = WKWebView(frame: window.contentView!.bounds, configuration: configuration)
-        window.contentView?.addSubview(self.webView)
-#else
-        self.webView = WKWebView(frame: .zero, configuration: configuration)
-#endif
-    }
-    
-    deinit {
-        DispatchQueue.main.sync { [weak webView] in
-            webView?.stopLoading()
-            webView?.navigationDelegate = nil
-        }
+        self.webView =  WKWebView(frame: .zero, configuration: configuration)
     }
     
     public func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 15) async throws -> String {
@@ -53,55 +28,38 @@ public class WebKitFetcher: HTMLFetching, @unchecked Sendable {
     
     private func performFetchHTML(from url: URL, referer: URL?) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
-            // 既存のリクエストをキャンセル
-            webView.stopLoading()
-            
+            // Create a URL request
             var request = URLRequest(url: url)
-            request.timeoutInterval = 30
-            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-            
             if let referer = referer {
                 request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
             }
             
+            // Set up the navigation delegate
             let delegate = NavigationDelegate { [weak self] result in
-                guard let self = self else { return }
-                
-                self.navigationDelegate = nil
-                self.webView.navigationDelegate = nil
-                
+                guard let self = self else {
+                    continuation.resume(throwing: TimeoutError())
+                    return
+                }
+                self.navigationDelegate = nil // Release the delegate
                 switch result {
                 case .success:
-                    self.extractHTMLContent(continuation: continuation)
+                    self.webView.evaluateJavaScript("document.documentElement.outerHTML") { html, error in
+                        if let html = html as? String {
+                            continuation.resume(returning: html)
+                        } else if let error = error {
+                            continuation.resume(throwing: error)
+                        } else {
+                            continuation.resume(throwing: TimeoutError())
+                        }
+                    }
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 }
             }
             
-            navigationDelegate = delegate
-            webView.navigationDelegate = delegate
-            webView.load(request)
-        }
-    }
-    
-    private func extractHTMLContent(continuation: CheckedContinuation<String, Error>) {
-        webView.evaluateJavaScript("document.readyState") { [weak self] readyState, _ in
-            guard let self = self else { return }
-            
-            guard readyState as? String == "complete" else {
-                continuation.resume(throwing: NSError(domain: "WebKitError", code: 500, userInfo: [NSLocalizedDescriptionKey: "Page load incomplete"]))
-                return
-            }
-            
-            self.webView.evaluateJavaScript("document.documentElement.outerHTML") { html, error in
-                if let html = html as? String {
-                    continuation.resume(returning: html)
-                } else if let error = error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(throwing: TimeoutError())
-                }
-            }
+            self.navigationDelegate = delegate
+            self.webView.navigationDelegate = delegate
+            self.webView.load(request)
         }
     }
 }

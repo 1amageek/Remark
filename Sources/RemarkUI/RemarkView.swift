@@ -85,7 +85,7 @@ func measure<T>(label: String = "Execution Time", block: @Sendable () async thro
 @Observable
 class ViewModel: @unchecked Sendable {
     
-    var url: String = "https://www.google.com/search?q=%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3"
+    var url: String = "https://www.apple.com/"
     
     var content: String = ""
     
