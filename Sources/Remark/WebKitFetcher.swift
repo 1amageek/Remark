@@ -13,8 +13,9 @@ public class WebKitFetcher: HTMLFetching, @unchecked Sendable {
         configuration.defaultWebpagePreferences = WKWebpagePreferences()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.websiteDataStore = .nonPersistent()
-        configuration.suppressesIncrementalRendering = false
-        self.webView =  WKWebView(frame: .zero, configuration: configuration)
+        configuration.suppressesIncrementalRendering = true
+        self.webView = WKWebView(frame: .zero, configuration: configuration)
+        self.webView.customUserAgent = Self.generateUserAgent()
     }
     
     public func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 15) async throws -> String {
@@ -30,6 +31,10 @@ public class WebKitFetcher: HTMLFetching, @unchecked Sendable {
         try await withCheckedThrowingContinuation { continuation in
             // Create a URL request
             var request = URLRequest(url: url)
+            request.setValue(Self.generateAcceptLanguage(), forHTTPHeaderField: "Accept-Language")
+            request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", forHTTPHeaderField: "Accept")
+            request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
+            request.setValue(Self.generateUserAgent(), forHTTPHeaderField: "User-Agent")
             if let referer = referer {
                 request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
             }
@@ -122,5 +127,32 @@ struct TimeoutError: Error {
     /// A description of the timeout error.
     var localizedDescription: String {
         "Operation timed out."
+    }
+}
+
+extension WebKitFetcher {
+    
+    private static func generateUserAgent() -> String {
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+        let osVersionFormatted = osVersion.replacingOccurrences(of: "Version ", with: "")
+        let platform = "Macintosh; Intel Mac OS X \(osVersionFormatted)"
+
+        let webView = WKWebView()
+        let webKitVersion = webView.configuration.applicationNameForUserAgent ?? "AppleWebKit/537.36"
+        
+        return "Mozilla/5.0 (\(platform)) \(webKitVersion) (KHTML, like Gecko) Safari/\(webKitVersion.components(separatedBy: "/").last ?? "537.36")"
+    }
+    
+    private static func generateAcceptLanguage() -> String {
+        let languages = Locale.preferredLanguages
+        let languagesWithQuality = languages.enumerated().map { index, language -> String in
+            let quality = 1.0 - (Double(index) * 0.1)
+            if index == 0 {
+                return language
+            } else {
+                return "\(language);q=\(String(format: "%.1f", quality))"
+            }
+        }
+        return languagesWithQuality.joined(separator: ",")
     }
 }

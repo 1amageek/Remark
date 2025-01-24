@@ -41,7 +41,7 @@ public struct RemarkView: View {
             }
         }
         .task {
-            try? await measure(label: "fetch() 実行時間") {
+            await measure(label: "fetch() 実行時間") {
                 try? await viewModel.fetch()
             }
         }

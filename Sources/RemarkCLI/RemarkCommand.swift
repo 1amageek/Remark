@@ -26,7 +26,7 @@ struct RemarkCommand: AsyncParsableCommand {
             throw ValidationError("Invalid URL provided")
         }
         
-        let remark = try await Remark.fetch(from: inputURL)
+        let remark = try await Remark.fetch(from: inputURL, method: .interactive)
         print(remark.markdown)
     }
 }
