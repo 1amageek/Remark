@@ -624,6 +624,7 @@ extension Remark {
             
             let resolvedHref = Self.resolveURL(href, pageURL: url)
             let text = try Self.extractLinkText(from: element, pageURL: url)
+            if text.isEmpty { return nil }
             return Link(url: resolvedHref, text: text)
         }
     }
