@@ -32,7 +32,7 @@ public struct Remark: Sendable {
     ///   - html: The HTML string to be parsed.
     ///   - baseURL: The base URL of the page being processed (optional).
     /// - Throws: An error if the HTML cannot be parsed.
-    public init(_ html: String, url: URL? = nil) throws {
+    public init(_ html: String, url: URL? = nil, mask: [Remark.Tag] = [.header, .footer, .aside, .nav]) throws {
         self.url = url
         self.html = html
         let doc = try SwiftSoup.parse(html)
@@ -42,12 +42,16 @@ public struct Remark: Sendable {
         self.description = try Remark.extractDescription(from: doc)
         self.ogData = try Remark.extractOGPData(from: doc)
         
+        for tag in mask {
+            try doc.select(tag.rawValue).remove()
+        }
+        
         // Extract main content and convert to Markdown
-        let mainContent = try Remark.extractMainContent(from: doc)
-        self.markdown = try mainContent.array().map { try Remark.convertNodeToMarkdown($0, pageURL: url) }.joined()
+        let content = try Remark.extractBody(from: doc)
+        self.markdown = try content.array().map { try Remark.convertNodeToMarkdown($0, pageURL: url) }.joined()
         
         // Extract plain text body
-        self.body = try mainContent.text()
+        self.body = try content.text()
     }
 }
 
@@ -146,7 +150,7 @@ extension Remark {
     /// ```
     public static func throwingStream(
         from url: URL,
-        checkInterval: TimeInterval = 0.35
+        checkInterval: TimeInterval = 0.15
     ) -> AsyncThrowingStream<Remark, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -208,6 +212,15 @@ extension Remark {
 }
 
 extension Remark {
+    
+    
+    /// Extracts the main content section from the HTML document.
+    /// - Parameter doc: The HTML document.
+    /// - Returns: The main content as an `Elements` collection.
+    /// - Throws: An error if extraction fails.
+    private static func extractBody(from doc: Document) throws -> Elements {
+        try doc.select("body")
+    }
     
     /// Extracts the main content section from the HTML document.
     /// - Parameter doc: The HTML document.
@@ -404,7 +417,7 @@ extension Remark {
                 markdown += "\n" + String(repeating: "#", count: headerLevel) + " " + content + "\n"
                 
             case "p":
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)                
+                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
                 let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmedContent.isEmpty {
                     markdown += "\n" + trimmedContent + "\n"
