@@ -8,7 +8,7 @@ struct RemarkCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "remark",
         abstract: "Convert HTML content from URLs to Markdown format",
-        version: "1.0.0"
+        version: "1.1.0"
     )
 
     @Argument(help: "The URL to fetch and convert to Markdown")
