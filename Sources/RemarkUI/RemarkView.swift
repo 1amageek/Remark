@@ -101,9 +101,7 @@ class ViewModel: @unchecked Sendable {
         guard let url = URL(string: url) else {
             return
         }
-        let fetcher = await WebKitFetcher()
-        let webpage = try await fetcher.fetchHTML(from: url)
-        self.remark = try Remark(webpage, url: url)
+        self.remark = try await Remark.fetch(from: url, method: .interactive)
         self.content = self.remark?.page ?? ""
         self.sections = self.remark?.sections(with: 2) ?? []
     }
