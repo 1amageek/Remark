@@ -219,7 +219,8 @@ extension Remark {
     /// - Returns: The main content as an `Elements` collection.
     /// - Throws: An error if extraction fails.
     private static func extractBody(from doc: Document) throws -> Elements {
-        try doc.select("body")
+        let elements = try doc.select("body")
+        return elements
     }
     
     /// Extracts the main content section from the HTML document.

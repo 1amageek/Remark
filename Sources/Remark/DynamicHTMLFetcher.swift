@@ -39,7 +39,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         from url: URL,
         referer: URL? = nil,
         checkInterval: TimeInterval = 0.15,
-        requiredStableCount: Int = 3,
+        requiredStableCount: Int = 5,
         timeout: TimeInterval = 30
     ) -> AsyncStream<String> {
         return AsyncStream { continuation in
@@ -99,7 +99,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         }
     }
     
-    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 30) async throws -> String {
+    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 60) async throws -> String {
         self.currentReferer = referer
         
         return try await withCheckedThrowingContinuation { continuation in
@@ -150,7 +150,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
     }
     
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        contentCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+        contentCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.checkContentStability(webView)
             }
@@ -158,30 +158,57 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
     }
     
     private func checkContentStability(_ webView: WKWebView) {
-        webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, error in
+        // First check if JavaScript execution is complete
+        webView.evaluateJavaScript("document.readyState") { [weak self] readyStateResult, readyStateError in
             guard let self = self else { return }
-            if let error = error {
-                self.handleError(error)
+            
+            let readyState = readyStateResult as? String ?? "unknown"
+            
+            // Only proceed if document is in complete state
+            guard readyState == "complete" else {
                 return
             }
             
-            guard let currentHTML = result as? String else {
-                self.handleError(ValidationError("Could not extract HTML content"))
-                return
-            }
+            // Check if main content elements are present (Apple Developer specific)
+            webView.evaluateJavaScript("""
+                document.querySelector('.main-content, main, article, [role="main"], .documentation-content') !== null
+            """) { [weak self] mainContentResult, mainContentError in
+                guard let self = self else { return }
+                
+                let hasMainContent = mainContentResult as? Bool ?? false
+                
+                // Only proceed if main content is present
+                guard hasMainContent else {
+                    return
+                }
+                
+                // Now check HTML content stability
+                webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, error in
+                    guard let self = self else { return }
+                    if let error = error {
+                        self.handleError(error)
+                        return
+                    }
+                    
+                    guard let currentHTML = result as? String else {
+                        self.handleError(ValidationError("Could not extract HTML content"))
+                        return
+                    }
             
-            if currentHTML == self.previousHTML {
-                self.stableContentCount += 1
-                if self.stableContentCount >= 3 {
-                    self.contentCheckTimer?.invalidate()
-                    if let handler = self.completionHandler {
-                        handler(.success(currentHTML))
-                        self.completionHandler = nil
+                    if currentHTML == self.previousHTML {
+                        self.stableContentCount += 1
+                        if self.stableContentCount >= 5 {
+                            self.contentCheckTimer?.invalidate()
+                            if let handler = self.completionHandler {
+                                handler(.success(currentHTML))
+                                self.completionHandler = nil
+                            }
+                        }
+                    } else {
+                        self.stableContentCount = 0
+                        self.previousHTML = currentHTML
                     }
                 }
-            } else {
-                self.stableContentCount = 0
-                self.previousHTML = currentHTML
             }
         }
     }
