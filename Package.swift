@@ -13,6 +13,9 @@ let package = Package(
         .library(
             name: "RemarkUI",
             targets: ["RemarkUI"]),
+        .executable(
+            name: "remark",
+            targets: ["RemarkCLI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", branch: "master"),
