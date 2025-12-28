@@ -3,45 +3,129 @@ import Foundation
 @testable import Remark
 import SwiftSoup
 
-@Test func example() async throws {
+// MARK: - Public API Tests
+
+@Test("Remark initialization extracts title, description, and body")
+func testRemarkInitialization() throws {
     let htmlContent = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>旅館のページ</title>
-    <meta name="description" content="素晴らしい旅館でのご宿泊をお楽しみください。">
-</head>
-<body>
-    <main>
-        <h1>ようこそ</h1>
-        <p>この旅館は、最高の体験を提供します。</p>
-        <section>
-            <h2>お部屋情報</h2>
-            <p>和室や洋室などさまざまな部屋をご用意しております。</p>
-        </section>
-        <section>
-            <h2>プランのご紹介</h2>
-            <ul>
-                <li>朝食付きプラン</li>
-                <li>温泉満喫プラン</li>
-            </ul>
-        </section>
-        <img src="https://example.com/image.jpg" alt="旅館の外観">
-        <a href="https://example.com/contact" aria-label="お問い合わせ">お問い合わせ</a>
-    </main>
-</body>
-</html>
-"""
-    
-    do {
-        let remark = try Remark(htmlContent)
-        print("タイトル: \(remark.title)")
-        print("説明: \(remark.description)")
-        print("本文: \(remark.body)")
-        print("Markdown:\n\(remark.page)")
-    } catch {
-        print("Error: \(error)")
-    }
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>テストページ</title>
+        <meta name="description" content="ページの説明文です。">
+    </head>
+    <body>
+        <main>
+            <h1>メインタイトル</h1>
+            <p>本文のテキストです。</p>
+        </main>
+    </body>
+    </html>
+    """
+
+    let remark = try Remark(htmlContent)
+
+    #expect(remark.title == "テストページ")
+    #expect(remark.description == "ページの説明文です。")
+    #expect(remark.body.contains("メインタイトル"))
+    #expect(remark.body.contains("本文のテキストです"))
+    #expect(remark.markdown.contains("# メインタイトル"))
+}
+
+@Test("Remark mask parameter removes specified elements")
+func testRemarkMaskParameter() throws {
+    let htmlContent = """
+    <html>
+    <body>
+        <header><p>ヘッダー</p></header>
+        <nav><p>ナビゲーション</p></nav>
+        <main><p>メインコンテンツ</p></main>
+        <aside><p>サイドバー</p></aside>
+        <footer><p>フッター</p></footer>
+    </body>
+    </html>
+    """
+
+    // Default mask removes header, footer, aside, nav
+    let remarkDefault = try Remark(htmlContent)
+    #expect(!remarkDefault.markdown.contains("ヘッダー"))
+    #expect(!remarkDefault.markdown.contains("ナビゲーション"))
+    #expect(!remarkDefault.markdown.contains("サイドバー"))
+    #expect(!remarkDefault.markdown.contains("フッター"))
+    #expect(remarkDefault.markdown.contains("メインコンテンツ"))
+
+    // Empty mask keeps all elements
+    let remarkNoMask = try Remark(htmlContent, mask: [])
+    #expect(remarkNoMask.markdown.contains("ヘッダー"))
+    #expect(remarkNoMask.markdown.contains("ナビゲーション"))
+    #expect(remarkNoMask.markdown.contains("メインコンテンツ"))
+}
+
+@Test("generateFrontMatter creates valid YAML front matter")
+func testGenerateFrontMatter() throws {
+    let htmlContent = """
+    <html>
+    <head>
+        <title>フロントマターテスト</title>
+        <meta name="description" content="説明文">
+        <meta property="og:image" content="https://example.com/image.jpg">
+        <meta property="og:type" content="article">
+    </head>
+    <body><p>コンテンツ</p></body>
+    </html>
+    """
+
+    let remark = try Remark(htmlContent)
+    let frontMatter = remark.generateFrontMatter()
+
+    #expect(frontMatter.hasPrefix("---"))
+    #expect(frontMatter.hasSuffix("---\n"))
+    #expect(frontMatter.contains("title: \"フロントマターテスト\""))
+    #expect(frontMatter.contains("description: \"説明文\""))
+    #expect(frontMatter.contains("og_image: \"https://example.com/image.jpg\""))
+    #expect(frontMatter.contains("og_type: \"article\""))
+}
+
+@Test("page property combines front matter and markdown")
+func testPageProperty() throws {
+    let htmlContent = """
+    <html>
+    <head>
+        <title>ページテスト</title>
+        <meta name="description" content="テスト説明">
+    </head>
+    <body><main><h1>見出し</h1><p>段落</p></main></body>
+    </html>
+    """
+
+    let remark = try Remark(htmlContent)
+    let page = remark.page
+
+    // Front matter comes first
+    #expect(page.hasPrefix("---"))
+    #expect(page.contains("title: \"ページテスト\""))
+
+    // Markdown content follows
+    #expect(page.contains("# 見出し"))
+    #expect(page.contains("段落"))
+}
+
+@Test("plainText removes markdown link syntax")
+func testPlainTextProperty() throws {
+    let htmlContent = """
+    <html><body>
+        <p>これは<a href="https://example.com">リンク</a>です。</p>
+        <p>画像: <img src="img.jpg" alt="画像"></p>
+    </body></html>
+    """
+
+    let remark = try Remark(htmlContent)
+    let plainText = remark.plainText
+
+    // Link text is preserved, URL syntax is removed
+    #expect(plainText.contains("リンク"))
+    #expect(!plainText.contains("]("))
+    #expect(!plainText.contains("https://example.com"))
 }
 
 @Test("Heading tags conversion")
@@ -263,8 +347,8 @@ func testComplexNestedStructure() throws {
     </article>
     """
     let element = try SwiftSoup.parse(html).body()!.child(0)
-    let expectedMarkdown = "\n# タイトル\n\nこれは**重要な**情報です。\n\n> これは引用です。\n\n- 項目1\n- 項目2\n  - サブ項目1\n  - サブ項目2\n"
-    
+    let expectedMarkdown = "\n<!-- article -->\n\n# タイトル\n\nこれは**重要な**情報です。\n\n> これは引用です。\n\n- 項目1\n- 項目2\n  - サブ項目1\n  - サブ項目2\n\n<!-- /article -->\n"
+
     let markdown = try Remark.convertNodeToMarkdown(element)
     #expect(markdown == expectedMarkdown)
 }
@@ -747,4 +831,206 @@ func testLinkTextExtractionWithWhitespace() throws {
     let markdown = try Remark.convertNodeToMarkdown(element)
     // Should trim whitespace but use aria-label
     #expect(markdown == "[Aria Label](https://example.com)")
+}
+
+// MARK: - extractLinks() Tests
+
+@Test("extractLinks returns valid HTTP/HTTPS links")
+func testExtractLinksBasic() throws {
+    let htmlContent = """
+    <html><body>
+        <a href="https://example.com">Example</a>
+        <a href="http://test.com/page">Test Page</a>
+        <a href="https://another.com" aria-label="Another Site">Link</a>
+    </body></html>
+    """
+
+    let remark = try Remark(htmlContent)
+    let links = try remark.extractLinks()
+
+    #expect(links.count == 3)
+    #expect(links.contains { $0.url == "https://example.com" && $0.text == "Example" })
+    #expect(links.contains { $0.url == "http://test.com/page" && $0.text == "Test Page" })
+    #expect(links.contains { $0.text == "Another Site" })
+}
+
+@Test("extractLinks filters out invalid schemes")
+func testExtractLinksFiltersInvalidSchemes() throws {
+    let htmlContent = """
+    <html><body>
+        <a href="https://valid.com">Valid</a>
+        <a href="javascript:void(0)">JavaScript</a>
+        <a href="mailto:test@example.com">Email</a>
+        <a href="tel:+1234567890">Phone</a>
+        <a href="#anchor">Anchor</a>
+    </body></html>
+    """
+
+    let remark = try Remark(htmlContent)
+    let links = try remark.extractLinks()
+
+    #expect(links.count == 1)
+    #expect(links[0].url == "https://valid.com")
+}
+
+@Test("extractLinks handles empty href")
+func testExtractLinksEmptyHref() throws {
+    let htmlContent = """
+    <html><body>
+        <a href="">Empty</a>
+        <a>No href</a>
+        <a href="https://valid.com">Valid</a>
+    </body></html>
+    """
+
+    let remark = try Remark(htmlContent)
+    let links = try remark.extractLinks()
+
+    #expect(links.count == 1)
+    #expect(links[0].url == "https://valid.com")
+}
+
+// MARK: - Edge Case Tests
+
+@Test("Empty HTML produces empty content")
+func testEmptyHTML() throws {
+    let htmlContent = "<html><body></body></html>"
+
+    let remark = try Remark(htmlContent)
+
+    #expect(remark.title.isEmpty)
+    #expect(remark.description.isEmpty)
+    #expect(remark.body.isEmpty)
+}
+
+@Test("HTML with only whitespace")
+func testWhitespaceOnlyHTML() throws {
+    let htmlContent = """
+    <html>
+    <body>
+        <p>   </p>
+        <div>
+        </div>
+    </body>
+    </html>
+    """
+
+    let remark = try Remark(htmlContent)
+    #expect(remark.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+}
+
+@Test("Special characters are preserved")
+func testSpecialCharacters() throws {
+    let htmlContent = """
+    <html><body>
+        <p>特殊文字: &amp; &lt; &gt; &quot; &#39;</p>
+        <p>絵文字: 🎉 🚀 ✨</p>
+        <p>記号: © ® ™ € ¥</p>
+    </body></html>
+    """
+
+    let remark = try Remark(htmlContent)
+
+    #expect(remark.markdown.contains("&"))
+    #expect(remark.markdown.contains("<"))
+    #expect(remark.markdown.contains(">"))
+    #expect(remark.markdown.contains("🎉"))
+    #expect(remark.markdown.contains("©"))
+}
+
+@Test("Deeply nested elements are handled")
+func testDeeplyNestedElements() throws {
+    let htmlContent = """
+    <html><body>
+        <div><div><div><div><div>
+            <p>深くネストされた段落</p>
+        </div></div></div></div></div>
+    </body></html>
+    """
+
+    let remark = try Remark(htmlContent)
+    #expect(remark.markdown.contains("深くネストされた段落"))
+}
+
+@Test("Multiple same-level headings")
+func testMultipleSameLevelHeadings() throws {
+    let htmlContent = """
+    <html><body>
+        <h1>First H1</h1>
+        <p>Content 1</p>
+        <h1>Second H1</h1>
+        <p>Content 2</p>
+        <h1>Third H1</h1>
+        <p>Content 3</p>
+    </body></html>
+    """
+
+    let remark = try Remark(htmlContent)
+    let sections = remark.sections(with: 1)
+
+    #expect(sections.count == 3)
+    #expect(sections[0].content.contains("# First H1"))
+    #expect(sections[1].content.contains("# Second H1"))
+    #expect(sections[2].content.contains("# Third H1"))
+}
+
+@Test("Mixed content with inline elements")
+func testMixedInlineContent() throws {
+    let htmlContent = """
+    <html><body>
+        <p>This is <strong>bold</strong> and <em>italic</em> and <code>code</code> text.</p>
+    </body></html>
+    """
+
+    let remark = try Remark(htmlContent)
+
+    #expect(remark.markdown.contains("**bold**"))
+    #expect(remark.markdown.contains("*italic*"))
+    #expect(remark.markdown.contains("`code`"))
+}
+
+@Test("Table with empty cells")
+func testTableWithEmptyCells() throws {
+    let html = """
+    <table>
+        <tr><th>Header 1</th><th></th></tr>
+        <tr><td></td><td>Data</td></tr>
+    </table>
+    """
+    let element = try SwiftSoup.parse(html).body()!.child(0)
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("| Header 1 |"))
+    #expect(markdown.contains("| Data |"))
+}
+
+@Test("Code block with language hint")
+func testCodeBlockPreservesContent() throws {
+    let htmlContent = """
+    <html><body>
+        <pre><code>func hello() { print("Hello, World!") }</code></pre>
+    </body></html>
+    """
+
+    let remark = try Remark(htmlContent)
+
+    #expect(remark.markdown.contains("```"))
+    #expect(remark.markdown.contains("func hello()"))
+    #expect(remark.markdown.contains("print"))
+}
+
+@Test("URL with base URL resolves correctly")
+func testURLWithBaseURL() throws {
+    let htmlContent = """
+    <html><body>
+        <a href="/page">Relative Link</a>
+        <img src="../image.jpg" alt="Image">
+    </body></html>
+    """
+
+    let baseURL = URL(string: "https://example.com/docs/intro.html")!
+    let remark = try Remark(htmlContent, url: baseURL)
+
+    #expect(remark.markdown.contains("(https://example.com/page)"))
+    #expect(remark.markdown.contains("(https://example.com/image.jpg)"))
 }

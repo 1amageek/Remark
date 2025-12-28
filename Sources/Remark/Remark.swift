@@ -658,11 +658,15 @@ extension Remark {
         return match.1.count
     }
     
-    /// Normalizes Markdown text by removing excessive newlines and whitespace.
+    /// Normalizes Markdown text by removing excessive newlines, whitespace, and HTML comments.
     /// - Parameter text: The Markdown text to normalize.
     /// - Returns: The normalized Markdown text with consistent line breaks and trimmed whitespace.
     private func normalizeMarkdown(_ text: String) -> String {
-        let normalized = text.replacingOccurrences(of: "\n{2,}", with: "\n", options: .regularExpression)
+        var normalized = text
+        // Remove HTML comments (e.g., <!-- main -->, <!-- /article -->)
+        normalized = normalized.replacingOccurrences(of: "<!--[^>]*-->", with: "", options: .regularExpression)
+        // Remove excessive newlines
+        normalized = normalized.replacingOccurrences(of: "\n{2,}", with: "\n", options: .regularExpression)
         return normalized.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     

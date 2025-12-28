@@ -25,7 +25,17 @@ dependencies: [
 
 ### 💻 As a Command Line Tool
 
-#### 🛠 Using Make (Recommended)
+#### 🍃 Using Mint (Recommended)
+
+[Mint](https://github.com/yonaskolb/Mint) is the easiest way to install Swift command line tools! 🚀
+
+```bash
+mint install 1amageek/Remark
+```
+
+That's it! Now you can use `remark` from anywhere! ✨
+
+#### 🛠 Using Make
 
 1. Clone the repo and move into it:
 ```bash
@@ -52,7 +62,7 @@ swift build -c release
 ```
 3. Copy to your bin:
 ```bash
-cp .build/release/RemarkCLI /usr/local/bin/remark
+cp .build/release/remark /usr/local/bin/remark
 ```
 
 ## 🎮 Usage
@@ -153,23 +163,22 @@ make resolve    # 🎯 Resolve dependencies
 
 ## 🧪 Tests
 
-Here's an example test for OGP extraction:
+Here's an example test for OGP extraction using Swift Testing:
 
 ```swift
-import XCTest
+import Testing
 @testable import Remark
 
-final class RemarkTests: XCTestCase {
-    func testOGPDataExtraction() throws {
-        let htmlContent = """
-        <meta property="og:image" content="https://example.com/cool.jpg" />
-        <meta property="og:title" content="Amazing Page ✨" />
-        """
-        
-        let remark = try Remark(htmlContent)
-        XCTAssertEqual(remark.ogData["og_image"], "https://example.com/cool.jpg")
-        XCTAssertEqual(remark.ogData["og_title"], "Amazing Page ✨")
-    }
+@Test("OGP data extraction")
+func testOGPDataExtraction() throws {
+    let htmlContent = """
+    <meta property="og:image" content="https://example.com/cool.jpg" />
+    <meta property="og:title" content="Amazing Page ✨" />
+    """
+
+    let remark = try Remark(htmlContent)
+    #expect(remark.ogData["og_image"] == "https://example.com/cool.jpg")
+    #expect(remark.ogData["og_title"] == "Amazing Page ✨")
 }
 ```
 
