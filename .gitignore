@@ -1,8 +1,49 @@
+# macOS
 .DS_Store
-/.build
-/Packages
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode
 xcuserdata/
 DerivedData/
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
 .swiftpm/configuration/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.swiftpm/xcode/package.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+Packages/
+Package.resolved
+
+# CocoaPods (if used)
+Pods/
+
+# Carthage (if used)
+Carthage/Build/
+Carthage/Checkouts/
+
+# Build artifacts
+*.o
+*.a
+*.dylib
+
+# Test artifacts
+*.xcresult
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Credentials
 .netrc
+
+# Environment
+.env
+.env.local
