@@ -463,7 +463,22 @@ extension Remark {
                 
             case "hr":
                 markdown += "\n---\n"
-                
+
+            case "button":
+                // Only convert buttons that contain links, ignore JS-only buttons
+                let links = try element.select("a")
+                if !links.isEmpty() {
+                    let content = try element.getChildNodes().map {
+                        try convertNodeToMarkdown($0, quoteLevel: quoteLevel, pageURL: pageURL)
+                    }.joined()
+                    markdown += content
+                }
+                // Buttons without links are ignored (UI-only elements)
+
+            case "dialog":
+                // Dialogs are UI modals, ignore them
+                break
+
             default:
                 let content = try element.getChildNodes().map {
                     try convertNodeToMarkdown($0, quoteLevel: quoteLevel, pageURL: pageURL)
