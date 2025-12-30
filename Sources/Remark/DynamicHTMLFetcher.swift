@@ -99,7 +99,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         }
     }
     
-    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 6) async throws -> String {
+    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 5) async throws -> String {
         self.currentReferer = referer
         
         return try await withCheckedThrowingContinuation { continuation in
@@ -150,7 +150,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
     }
     
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        contentCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        contentCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.checkContentStability(webView)
             }
@@ -173,7 +173,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
 
             if currentHTML == self.previousHTML {
                 self.stableContentCount += 1
-                if self.stableContentCount >= 2 {
+                if self.stableContentCount >= 3 {
                     self.contentCheckTimer?.invalidate()
                     if let handler = self.completionHandler {
                         handler(.success(currentHTML))
