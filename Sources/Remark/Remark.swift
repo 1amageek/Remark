@@ -32,7 +32,7 @@ public struct Remark: Sendable {
     ///   - html: The HTML string to be parsed.
     ///   - baseURL: The base URL of the page being processed (optional).
     /// - Throws: An error if the HTML cannot be parsed.
-    public init(_ html: String, url: URL? = nil, mask: [Remark.Tag] = [.header, .footer, .aside, .nav]) throws {
+    public init(_ html: String, url: URL? = nil, mask: [Remark.Tag] = [.header, .footer, .aside, .nav, .noscript]) throws {
         self.url = url
         self.html = html
         let doc = try SwiftSoup.parse(html)

@@ -17,6 +17,7 @@ extension Remark {
         case footer = "footer"
         case nav = "nav"
         case aside = "aside"
+        case noscript = "noscript"
         
         // Text Content
         case p = "p"
