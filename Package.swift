@@ -18,8 +18,8 @@ let package = Package(
             targets: ["RemarkCLI"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/scinfu/SwiftSoup.git", branch: "master"),
-        .package(url: "https://github.com/apple/swift-argument-parser.git", branch: "main")
+        .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.11.3"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0")
     ],
     targets: [
         .target(
