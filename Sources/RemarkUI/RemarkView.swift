@@ -7,7 +7,7 @@
 
 import Foundation
 import SwiftUI
-import Remark
+import RemarkKit
 
 public struct RemarkView: View {
     

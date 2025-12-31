@@ -1,6 +1,6 @@
 import Foundation
 import ArgumentParser
-import Remark
+import RemarkKit
 
 
 @main
@@ -26,7 +26,7 @@ struct RemarkCommand: AsyncParsableCommand {
             throw ValidationError("Invalid URL provided")
         }
         
-        let remark = try await Remark.fetch(from: inputURL, method: .interactive)
+        let remark = try await Remark.fetch(from: inputURL)
         print(remark.markdown)
     }
 }

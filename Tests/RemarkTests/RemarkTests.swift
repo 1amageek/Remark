@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import Remark
+@testable import RemarkKit
 import SwiftSoup
 
 // MARK: - Public API Tests
