@@ -11,6 +11,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
     private var previousHTML: String?
     private var stableContentCount = 0
     private var contentStreamContinuation: AsyncStream<String>.Continuation?
+    private var hasExtendedTimeout = false
     
     private static func generateUserAgent() -> String {
         let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
@@ -101,7 +102,8 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
     
     func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 5) async throws -> String {
         self.currentReferer = referer
-        
+        self.hasExtendedTimeout = false
+
         return try await withCheckedThrowingContinuation { continuation in
             setupWebView()
             completionHandler = { [weak self] result in
@@ -125,14 +127,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             webView?.load(request)
             
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
-                guard let strongSelf = self else { return }
-                strongSelf.contentCheckTimer?.invalidate()
-                
-                if let html = strongSelf.previousHTML, let handler = strongSelf.completionHandler {
-                    handler(.success(html))
-                } else if let handler = strongSelf.completionHandler {
-                    handler(.failure(ValidationError("Timeout waiting for stable content")))
-                }
+                self?.handleTimeout()
             }
         }
     }
@@ -144,9 +139,41 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.websiteDataStore = .nonPersistent()
         configuration.suppressesIncrementalRendering = true
-        
+
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView?.navigationDelegate = self
+    }
+
+    private func handleTimeout() {
+        guard let handler = completionHandler else { return }
+
+        // データがあるが安定していない場合、2秒延長して安定を待つ
+        if previousHTML != nil && !hasExtendedTimeout {
+            hasExtendedTimeout = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.handleTimeout()
+            }
+            return
+        }
+
+        // タイムアウト処理を実行
+        contentCheckTimer?.invalidate()
+        completionHandler = nil
+
+        if let html = previousHTML {
+            handler(.success(html))
+        } else if let webView = webView {
+            // 安定していなくてもWebViewにデータがあれば返す
+            webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
+                if let html = result as? String {
+                    handler(.success(html))
+                } else {
+                    handler(.failure(ValidationError("Timeout: could not retrieve HTML content")))
+                }
+            }
+        } else {
+            handler(.failure(ValidationError("Timeout: WebView not available")))
+        }
     }
     
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
