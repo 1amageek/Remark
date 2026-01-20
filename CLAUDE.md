@@ -80,6 +80,7 @@ The project uses Swift Testing framework (not XCTest). Tests cover:
 
 - **Tag Masking**: By default masks `header`, `footer`, `aside`, `nav` elements
 - **Fetch Methods**: Supports `.default` (static) and `.interactive` (JavaScript-enabled) fetching
+- **Timeout**: Default timeout is 15 seconds for fetching content
 - **Section Splitting**: Can split content by heading levels (default: H1)
 - **Media Priority**: First media element in each section is captured
 - **URL Validation**: Only accepts valid URL schemes for links
@@ -90,6 +91,8 @@ The project uses Swift Testing framework (not XCTest). Tests cover:
 remark https://example.com                    # Convert to Markdown
 remark --include-front-matter https://...     # Include front matter
 remark --plain-text https://...               # Plain text output
+remark --timeout 30 https://...               # Custom timeout (default: 15 seconds)
+remark -t 30 https://...                      # Short form
 ```
 
 ## Common Patterns

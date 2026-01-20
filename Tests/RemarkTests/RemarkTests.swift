@@ -1034,3 +1034,33 @@ func testURLWithBaseURL() throws {
     #expect(remark.markdown.contains("(https://example.com/page)"))
     #expect(remark.markdown.contains("(https://example.com/image.jpg)"))
 }
+
+// MARK: - Timeout Tests
+
+@Test("Fetch with short timeout throws error for slow responses")
+func testFetchWithShortTimeout() async throws {
+    // Use an invalid/non-routable IP to trigger timeout
+    let url = URL(string: "http://10.255.255.1/")!
+
+    do {
+        _ = try await Remark.fetch(from: url, method: .default, timeout: 1)
+        Issue.record("Expected timeout error but fetch succeeded")
+    } catch {
+        // Expected: timeout or connection error
+        #expect(true)
+    }
+}
+
+@Test("Fetch accepts custom timeout parameter")
+func testFetchAcceptsCustomTimeout() async throws {
+    // This test verifies the API accepts the timeout parameter
+    // We use a very short timeout with an unreachable address
+    let url = URL(string: "http://10.255.255.1/")!
+
+    let startTime = Date()
+    _ = try? await Remark.fetch(from: url, method: .default, timeout: 2)
+    let elapsed = Date().timeIntervalSince(startTime)
+
+    // Should timeout within reasonable bounds (timeout + some buffer)
+    #expect(elapsed < 10, "Fetch should respect timeout parameter")
+}

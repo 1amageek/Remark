@@ -19,14 +19,21 @@ struct RemarkCommand: AsyncParsableCommand {
     
     @Flag(name: .shortAndLong, help: "Show only the plain text content")
     var plainText: Bool = false
-    
+
+    @Option(name: .shortAndLong, help: "Timeout in seconds for fetching content (default: 15)")
+    var timeout: Int = 15
+
     mutating func run() async throws {
         // URLの検証
         guard let inputURL = URL(string: url) else {
             throw ValidationError("Invalid URL provided")
         }
-        
-        let remark = try await Remark.fetch(from: inputURL)
+
+        guard timeout > 0 else {
+            throw ValidationError("Timeout must be a positive number")
+        }
+
+        let remark = try await Remark.fetch(from: inputURL, timeout: TimeInterval(timeout))
         print(remark.markdown)
     }
 }

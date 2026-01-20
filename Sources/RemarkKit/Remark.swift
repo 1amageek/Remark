@@ -69,15 +69,15 @@ extension Remark {
     ///
     /// This method creates a dynamic HTML fetcher on the main actor, fetches the HTML content,
     /// and initializes a new `Remark` instance with the fetched content.
-    public static func fetch(from url: URL, method: FetchMethod = .interactive) async throws -> Remark {
+    public static func fetch(from url: URL, method: FetchMethod = .interactive, timeout: TimeInterval = 15) async throws -> Remark {
         let html = try await {
             switch method {
             case .interactive:
                 let fetcher = await MainActor.run { DynamicHTMLFetcher() }
-                return try await fetcher.fetchHTML(from: url)
+                return try await fetcher.fetchHTML(from: url, timeout: timeout)
             case .default:
                 let fetcher = HTMLFetcher()
-                return try await fetcher.fetchHTML(from: url)
+                return try await fetcher.fetchHTML(from: url, timeout: timeout)
             }
         }()
         return try Remark(html, url: url)

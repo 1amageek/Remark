@@ -41,7 +41,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         referer: URL? = nil,
         checkInterval: TimeInterval = 0.15,
         requiredStableCount: Int = 5,
-        timeout: TimeInterval = 30
+        timeout: TimeInterval = 15
     ) -> AsyncStream<String> {
         return AsyncStream { continuation in
             self.contentStreamContinuation = continuation
@@ -100,7 +100,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         }
     }
     
-    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 5) async throws -> String {
+    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 15) async throws -> String {
         self.currentReferer = referer
         self.hasExtendedTimeout = false
 

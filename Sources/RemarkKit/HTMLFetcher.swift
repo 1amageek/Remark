@@ -14,8 +14,9 @@ class HTMLFetcher: HTMLFetching {
         self.session = session
     }
     
-    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 30) async throws -> String {
+    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 15) async throws -> String {
         var request = URLRequest(url: url)
+        request.timeoutInterval = timeout
         request.setValue(Self.generateUserAgent(), forHTTPHeaderField: "User-Agent")
         request.setValue(Self.generateAcceptLanguage(), forHTTPHeaderField: "Accept-Language")
         request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
