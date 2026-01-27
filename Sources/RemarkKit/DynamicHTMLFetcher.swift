@@ -12,6 +12,12 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
     private var stableContentCount = 0
     private var contentStreamContinuation: AsyncStream<String>.Continuation?
     private var hasExtendedTimeout = false
+    private let blockMediaLoading: Bool
+    private static var cachedContentRuleList: WKContentRuleList?
+
+    init(blockMediaLoading: Bool = false) {
+        self.blockMediaLoading = blockMediaLoading
+    }
     
     private static func generateUserAgent() -> String {
         let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
@@ -50,8 +56,8 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             
             Task { @MainActor in
                 self.currentReferer = referer
-                self.setupWebView()
-                
+                await self.setupWebView()
+
                 var request = URLRequest(url: url)
                 let userAgent = Self.generateUserAgent()
                 request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
@@ -103,42 +109,79 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
     func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 15) async throws -> String {
         self.currentReferer = referer
         self.hasExtendedTimeout = false
+        await setupWebView()
 
         return try await withCheckedThrowingContinuation { continuation in
-            setupWebView()
             completionHandler = { [weak self] result in
                 continuation.resume(with: result)
                 self?.completionHandler = nil
             }
-            
+
             var request = URLRequest(url: url)
             let userAgent = Self.generateUserAgent()
             request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-            
+
             if let referer = referer {
                 request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
             }
-            
+
             request.setValue(Self.generateAcceptLanguage(), forHTTPHeaderField: "Accept-Language")
             request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", forHTTPHeaderField: "Accept")
             request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
-            
+
             webView?.customUserAgent = userAgent
             webView?.load(request)
-            
+
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
                 self?.handleTimeout()
             }
         }
     }
     
-    private func setupWebView() {
+    private static func getContentRuleList() async -> WKContentRuleList? {
+        if let cached = cachedContentRuleList {
+            return cached
+        }
+
+        let blockRules = """
+        [
+            {
+                "trigger": {
+                    "url-filter": ".*",
+                    "resource-type": ["image", "media", "font"]
+                },
+                "action": {
+                    "type": "block"
+                }
+            }
+        ]
+        """
+
+        return await withCheckedContinuation { continuation in
+            WKContentRuleListStore.default().compileContentRuleList(
+                forIdentifier: "BlockUnnecessaryResources",
+                encodedContentRuleList: blockRules
+            ) { ruleList, _ in
+                cachedContentRuleList = ruleList
+                continuation.resume(returning: ruleList)
+            }
+        }
+    }
+
+    private func setupWebView() async {
         let configuration = WKWebViewConfiguration()
         configuration.applicationNameForUserAgent = Self.generateUserAgent()
         configuration.defaultWebpagePreferences = WKWebpagePreferences()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.websiteDataStore = .nonPersistent()
         configuration.suppressesIncrementalRendering = true
+
+        if blockMediaLoading {
+            configuration.mediaTypesRequiringUserActionForPlayback = .all
+            if let ruleList = await Self.getContentRuleList() {
+                configuration.userContentController.add(ruleList)
+            }
+        }
 
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView?.navigationDelegate = self

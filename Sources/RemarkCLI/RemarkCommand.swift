@@ -8,7 +8,7 @@ struct RemarkCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "remark",
         abstract: "Convert HTML content from URLs to Markdown format",
-        version: "1.2.0"
+        version: "1.3.0"
     )
 
     @Argument(help: "The URL to fetch and convert to Markdown")
@@ -23,6 +23,9 @@ struct RemarkCommand: AsyncParsableCommand {
     @Option(name: .shortAndLong, help: "Timeout in seconds for fetching content (default: 15)")
     var timeout: Int = 15
 
+    @Flag(name: .long, help: "Block loading of images, media, and fonts during fetch")
+    var blockMedia: Bool = false
+
     mutating func run() async throws {
         // URLの検証
         guard let inputURL = URL(string: url) else {
@@ -33,7 +36,7 @@ struct RemarkCommand: AsyncParsableCommand {
             throw ValidationError("Timeout must be a positive number")
         }
 
-        let remark = try await Remark.fetch(from: inputURL, timeout: TimeInterval(timeout))
+        let remark = try await Remark.fetch(from: inputURL, blockMediaLoading: blockMedia, timeout: TimeInterval(timeout))
         print(remark.markdown)
     }
 }

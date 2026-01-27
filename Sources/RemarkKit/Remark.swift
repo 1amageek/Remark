@@ -69,11 +69,11 @@ extension Remark {
     ///
     /// This method creates a dynamic HTML fetcher on the main actor, fetches the HTML content,
     /// and initializes a new `Remark` instance with the fetched content.
-    public static func fetch(from url: URL, method: FetchMethod = .interactive, timeout: TimeInterval = 15) async throws -> Remark {
+    public static func fetch(from url: URL, method: FetchMethod = .interactive, blockMediaLoading: Bool = false, timeout: TimeInterval = 15) async throws -> Remark {
         let html = try await {
             switch method {
             case .interactive:
-                let fetcher = await MainActor.run { DynamicHTMLFetcher() }
+                let fetcher = await MainActor.run { DynamicHTMLFetcher(blockMediaLoading: blockMediaLoading) }
                 return try await fetcher.fetchHTML(from: url, timeout: timeout)
             case .default:
                 let fetcher = HTMLFetcher()
@@ -103,11 +103,12 @@ extension Remark {
     /// ```
     public static func stream(
         from url: URL,
+        blockMediaLoading: Bool = false,
         checkInterval: TimeInterval = 0.35
     ) -> AsyncStream<Result<Remark, Error>> {
         AsyncStream { continuation in
             Task {
-                let fetcher = await MainActor.run { DynamicHTMLFetcher() }
+                let fetcher = await MainActor.run { DynamicHTMLFetcher(blockMediaLoading: blockMediaLoading) }
                 let htmlStream = await fetcher.contentCheckStream(
                     from: url,
                     checkInterval: checkInterval
@@ -150,11 +151,12 @@ extension Remark {
     /// ```
     public static func throwingStream(
         from url: URL,
+        blockMediaLoading: Bool = false,
         checkInterval: TimeInterval = 0.15
     ) -> AsyncThrowingStream<Remark, Error> {
         AsyncThrowingStream { continuation in
             Task {
-                let fetcher = await MainActor.run { DynamicHTMLFetcher() }
+                let fetcher = await MainActor.run { DynamicHTMLFetcher(blockMediaLoading: blockMediaLoading) }
                 let htmlStream = await fetcher.contentCheckStream(
                     from: url,
                     checkInterval: checkInterval
