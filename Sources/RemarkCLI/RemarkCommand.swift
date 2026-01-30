@@ -23,8 +23,8 @@ struct RemarkCommand: AsyncParsableCommand {
     @Option(name: .shortAndLong, help: "Timeout in seconds for fetching content (default: 15)")
     var timeout: Int = 15
 
-    @Flag(name: .long, help: "Block loading of images, media, and fonts during fetch")
-    var blockMedia: Bool = false
+    @Option(name: .long, parsing: .upToNextOption, help: "Resource types to block during fetch. Values: image, media, font, stylesheet, script, raw, svg, popup, ping, websocket, visual, style, active, network, nonessential, all, none. Default: nonessential")
+    var block: [String] = []
 
     mutating func run() async throws {
         // URLの検証
@@ -36,8 +36,29 @@ struct RemarkCommand: AsyncParsableCommand {
             throw ValidationError("Timeout must be a positive number")
         }
 
-        let remark = try await Remark.fetch(from: inputURL, blockMediaLoading: blockMedia, timeout: TimeInterval(timeout))
+        let blockedTypes = try parseBlockedResourceTypes()
+        let remark = try await Remark.fetch(from: inputURL, blockedResourceTypes: blockedTypes, timeout: TimeInterval(timeout))
         print(remark.markdown)
+    }
+
+    private func parseBlockedResourceTypes() throws -> BlockedResourceType {
+        if block.isEmpty {
+            return .nonessential
+        }
+
+        if block.count == 1 && block[0].lowercased() == "none" {
+            return []
+        }
+
+        var result: BlockedResourceType = []
+        for name in block {
+            guard let type = BlockedResourceType.fromName(name) else {
+                let validNames = BlockedResourceType.namedValues.map(\.name).joined(separator: ", ")
+                throw ValidationError("Unknown block type '\(name)'. Valid values: \(validNames), none")
+            }
+            result.insert(type)
+        }
+        return result
     }
 }
 

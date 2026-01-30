@@ -12,11 +12,11 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
     private var stableContentCount = 0
     private var contentStreamContinuation: AsyncStream<String>.Continuation?
     private var hasExtendedTimeout = false
-    private let blockMediaLoading: Bool
-    private static var cachedContentRuleList: WKContentRuleList?
+    private let blockedResourceTypes: BlockedResourceType
+    private static var cachedContentRuleLists: [BlockedResourceType: WKContentRuleList] = [:]
 
-    init(blockMediaLoading: Bool = false) {
-        self.blockMediaLoading = blockMediaLoading
+    init(blockedResourceTypes: BlockedResourceType = .nonessential) {
+        self.blockedResourceTypes = blockedResourceTypes
     }
     
     private static func generateUserAgent() -> String {
@@ -138,17 +138,21 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         }
     }
     
-    private static func getContentRuleList() async -> WKContentRuleList? {
-        if let cached = cachedContentRuleList {
+    private static func getContentRuleList(for types: BlockedResourceType) async -> WKContentRuleList? {
+        if let cached = cachedContentRuleLists[types] {
             return cached
         }
 
+        let resourceTypes = types.resourceTypeStrings
+        guard !resourceTypes.isEmpty else { return nil }
+
+        let resourceTypesJSON = resourceTypes.map { "\"\($0)\"" }.joined(separator: ", ")
         let blockRules = """
         [
             {
                 "trigger": {
                     "url-filter": ".*",
-                    "resource-type": ["image", "media", "font"]
+                    "resource-type": [\(resourceTypesJSON)]
                 },
                 "action": {
                     "type": "block"
@@ -157,12 +161,15 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         ]
         """
 
+        let identifier = "BlockResources_\(types.rawValue)"
         return await withCheckedContinuation { continuation in
             WKContentRuleListStore.default().compileContentRuleList(
-                forIdentifier: "BlockUnnecessaryResources",
+                forIdentifier: identifier,
                 encodedContentRuleList: blockRules
             ) { ruleList, _ in
-                cachedContentRuleList = ruleList
+                if let ruleList {
+                    cachedContentRuleLists[types] = ruleList
+                }
                 continuation.resume(returning: ruleList)
             }
         }
@@ -176,9 +183,11 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         configuration.websiteDataStore = .nonPersistent()
         configuration.suppressesIncrementalRendering = true
 
-        if blockMediaLoading {
-            configuration.mediaTypesRequiringUserActionForPlayback = .all
-            if let ruleList = await Self.getContentRuleList() {
+        if !blockedResourceTypes.isEmpty {
+            if blockedResourceTypes.contains(.media) {
+                configuration.mediaTypesRequiringUserActionForPlayback = .all
+            }
+            if let ruleList = await Self.getContentRuleList(for: blockedResourceTypes) {
                 configuration.userContentController.add(ruleList)
             }
         }
