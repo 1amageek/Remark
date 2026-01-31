@@ -56,9 +56,10 @@ public struct BlockedResourceType: OptionSet, Sendable, Hashable {
     /// Network / tracking: raw, websocket, ping
     public static let network: BlockedResourceType = [.raw, .websocket, .ping]
 
-    /// Non-essential resources for text extraction: visual + style + ping + popup.
-    /// Scripts, XHR, and WebSocket are kept because dynamic pages need them to load content.
-    public static let nonessential: BlockedResourceType = [.image, .media, .svgDocument, .styleSheet, .font, .ping, .popup]
+    /// Non-essential resources for text extraction: visual + font + ping + popup.
+    /// Scripts, XHR, WebSocket, and stylesheets are kept because dynamic pages (SPAs) may
+    /// depend on them to load content correctly.
+    public static let nonessential: BlockedResourceType = [.image, .media, .svgDocument, .font, .ping, .popup]
 
     /// All resource types.
     public static let all: BlockedResourceType = [.image, .media, .font, .styleSheet, .script, .raw, .svgDocument, .popup, .ping, .websocket]
