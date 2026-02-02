@@ -8,5 +8,5 @@
 import Foundation
 
 protocol HTMLFetching {
-    func fetchHTML(from url: URL, referer: URL?, timeout: TimeInterval) async throws -> String
+    func fetchHTML(from url: URL, referer: URL?, timeout: TimeInterval, customHeaders: [String: String]?) async throws -> String
 }

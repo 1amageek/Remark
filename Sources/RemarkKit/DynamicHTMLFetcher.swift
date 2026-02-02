@@ -47,13 +47,14 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         referer: URL? = nil,
         checkInterval: TimeInterval = 0.15,
         requiredStableCount: Int = 5,
-        timeout: TimeInterval = 15
+        timeout: TimeInterval = 15,
+        customHeaders: [String: String]? = nil
     ) -> AsyncStream<String> {
         return AsyncStream { continuation in
             self.contentStreamContinuation = continuation
             var localPreviousHTML: String?
             var localStableCount = 0
-            
+
             Task { @MainActor in
                 self.currentReferer = referer
                 await self.setupWebView()
@@ -61,15 +62,21 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
                 var request = URLRequest(url: url)
                 let userAgent = Self.generateUserAgent()
                 request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-                
+
                 if let referer = referer {
                     request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
                 }
-                
+
                 request.setValue(Self.generateAcceptLanguage(), forHTTPHeaderField: "Accept-Language")
                 request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", forHTTPHeaderField: "Accept")
                 request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
-                
+
+                if let customHeaders {
+                    for (key, value) in customHeaders {
+                        request.setValue(value, forHTTPHeaderField: key)
+                    }
+                }
+
                 webView?.customUserAgent = userAgent
                 webView?.load(request)
                 
@@ -106,7 +113,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         }
     }
     
-    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 15) async throws -> String {
+    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 15, customHeaders: [String: String]? = nil) async throws -> String {
         self.currentReferer = referer
         self.hasExtendedTimeout = false
         await setupWebView()
@@ -128,6 +135,12 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             request.setValue(Self.generateAcceptLanguage(), forHTTPHeaderField: "Accept-Language")
             request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", forHTTPHeaderField: "Accept")
             request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
+
+            if let customHeaders {
+                for (key, value) in customHeaders {
+                    request.setValue(value, forHTTPHeaderField: key)
+                }
+            }
 
             webView?.customUserAgent = userAgent
             webView?.load(request)

@@ -14,18 +14,24 @@ class HTMLFetcher: HTMLFetching {
         self.session = session
     }
     
-    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 15) async throws -> String {
+    func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 15, customHeaders: [String: String]? = nil) async throws -> String {
         var request = URLRequest(url: url)
         request.timeoutInterval = timeout
         request.setValue(Self.generateUserAgent(), forHTTPHeaderField: "User-Agent")
         request.setValue(Self.generateAcceptLanguage(), forHTTPHeaderField: "Accept-Language")
         request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
         request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
-        
+
         if let referer {
             request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
         }
-        
+
+        if let customHeaders {
+            for (key, value) in customHeaders {
+                request.setValue(value, forHTTPHeaderField: key)
+            }
+        }
+
         let (data, response) = try await session.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse,

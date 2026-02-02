@@ -8,7 +8,7 @@ struct RemarkCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "remark",
         abstract: "Convert HTML content from URLs to Markdown format",
-        version: "1.4.1"
+        version: "1.5.0"
     )
 
     @Argument(help: "The URL to fetch and convert to Markdown")
@@ -26,6 +26,9 @@ struct RemarkCommand: AsyncParsableCommand {
     @Option(name: .long, parsing: .upToNextOption, help: "Resource types to block during fetch. Values: image, media, font, stylesheet, script, raw, svg, popup, ping, websocket, visual, style, active, network, nonessential, all, none. Default: nonessential")
     var block: [String] = []
 
+    @Option(name: .shortAndLong, parsing: .upToNextOption, help: "Custom HTTP headers to send with the request (format: \"Header-Name: value\"). Can be specified multiple times.")
+    var header: [String] = []
+
     mutating func run() async throws {
         // URLの検証
         guard let inputURL = URL(string: url) else {
@@ -36,8 +39,9 @@ struct RemarkCommand: AsyncParsableCommand {
             throw ValidationError("Timeout must be a positive number")
         }
 
+        let customHeaders = try parseHeaders()
         let blockedTypes = try parseBlockedResourceTypes()
-        let remark = try await Remark.fetch(from: inputURL, blockedResourceTypes: blockedTypes, timeout: TimeInterval(timeout))
+        let remark = try await Remark.fetch(from: inputURL, blockedResourceTypes: blockedTypes, timeout: TimeInterval(timeout), customHeaders: customHeaders)
         print(remark.markdown)
     }
 
@@ -59,6 +63,28 @@ struct RemarkCommand: AsyncParsableCommand {
             result.insert(type)
         }
         return result
+    }
+
+    private func parseHeaders() throws -> [String: String]? {
+        guard !header.isEmpty else { return nil }
+
+        var headers: [String: String] = [:]
+        for headerString in header {
+            guard let separatorIndex = headerString.firstIndex(of: ":") else {
+                throw ValidationError("Invalid header format '\(headerString)'. Expected format: 'Header-Name: value'")
+            }
+
+            let key = String(headerString[..<separatorIndex]).trimmingCharacters(in: .whitespaces)
+            let value = String(headerString[headerString.index(after: separatorIndex)...]).trimmingCharacters(in: .whitespaces)
+
+            guard !key.isEmpty && !value.isEmpty else {
+                throw ValidationError("Invalid header format '\(headerString)'. Header name and value cannot be empty.")
+            }
+
+            headers[key] = value
+        }
+
+        return headers
     }
 }
 
