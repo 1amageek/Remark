@@ -366,7 +366,27 @@ extension Remark {
         "header", "footer", "figure", "details", "summary"
     ]
     
-    /// Recursively converts a `Node` to Markdown.
+    /// Tags whose children produce Markdown formatting and are processed directly.
+    /// Their children are inline/shallow, so bounded-depth processing is safe.
+    private static let formattingTags: Set<String> = [
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        "p", "blockquote", "pre", "code",
+        "strong", "b", "em", "i",
+        "ul", "ol", "table",
+    ]
+
+    /// Tags that produce output without child traversal.
+    private static let leafTags: Set<String> = [
+        "a", "img", "video", "hr", "dialog",
+    ]
+
+    /// Converts a `Node` to Markdown using iterative traversal.
+    ///
+    /// Transparent elements (div, span, etc.) are traversed iteratively via
+    /// an explicit stack, preventing stack overflow on deeply nested HTML.
+    /// Formatting elements (p, strong, h1, etc.) are processed directly
+    /// since their children are structurally shallow.
+    ///
     /// - Parameters:
     ///   - node: The HTML node to convert.
     ///   - quoteLevel: The quote level, used for nested blockquotes.
@@ -374,121 +394,159 @@ extension Remark {
     /// - Returns: The converted Markdown as a string.
     /// - Throws: An error if conversion fails.
     static func convertNodeToMarkdown(_ node: Node, quoteLevel: Int = 0, pageURL: URL? = nil) throws -> String {
-        var markdown = ""
-        
-        if let textNode = node as? TextNode {
-            let text = textNode.text().trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty {
-                markdown += text
+        var result = ""
+        // Stack holds nodes to process in reverse order (last = next to process)
+        var stack: [(node: Node, quoteLevel: Int)] = [(node, quoteLevel)]
+
+        while let (current, ql) = stack.popLast() {
+            // Text node: emit directly
+            if let textNode = current as? TextNode {
+                let text = textNode.text().trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    result += text
+                }
+                continue
             }
-        } else if let element = node as? Element {
+
+            guard let element = current as? Element else { continue }
             let tagName = element.tagName()
-            
+
+            // Semantic elements: wrap in HTML comments, process children directly
             if semanticElements.contains(tagName) {
-                let content = try element.getChildNodes().map {
-                    try convertNodeToMarkdown($0, quoteLevel: quoteLevel, pageURL: pageURL)
-                }.joined()
+                let content = try element.getChildMarkdown(quoteLevel: ql, pageURL: pageURL)
                 let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmedContent.isEmpty {
-                    return "\n<!-- \(tagName) -->\n\(content)\n<!-- /\(tagName) -->\n"
+                    result += "\n<!-- \(tagName) -->\n\(content)\n<!-- /\(tagName) -->\n"
                 }
-                return content
+                continue
             }
-            
-            switch tagName {
-            case "a":
-                let href = try element.attr("href")
-                let resolvedHref = resolveURL(href, pageURL: pageURL)
-                let text = try extractLinkText(from: element, pageURL: pageURL)
-                markdown += "[\(text)](\(resolvedHref))"
-                
-            case "img":
-                let src = try element.attr("src")
-                let resolvedSrc = resolveURL(src, pageURL: pageURL)
-                let alt = try element.attr("alt")
-                markdown += "![\(alt)](\(resolvedSrc))"
-                
-            case "video":
-                let src = try element.attr("src")
-                let resolvedSrc = resolveURL(src, pageURL: pageURL)
-                let title = try element.attr("title").isEmpty ? "video" : element.attr("title")
-                markdown += "[\(title)](\(resolvedSrc))"
-                
-            case "h1", "h2", "h3", "h4", "h5", "h6":
-                let headerLevel = Int(String(tagName.dropFirst())) ?? 1
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
-                markdown += "\n" + String(repeating: "#", count: headerLevel) + " " + content + "\n"
-                
-            case "p":
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
-                let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedContent.isEmpty {
-                    markdown += "\n" + trimmedContent + "\n"
-                }
-                
-            case "ul":
-                let content = try convertListToMarkdown(element, isOrdered: false, pageURL: pageURL)
-                markdown += content
-                
-            case "ol":
-                let content = try convertListToMarkdown(element, isOrdered: true, pageURL: pageURL)
-                markdown += content
-                
-            case "table":
-                let content = try convertTableToMarkdown(element, pageURL: pageURL)
-                markdown += content
-                
-            case "blockquote":
-                let innerContent = try element.getChildMarkdown(quoteLevel: 0, pageURL: pageURL)
-                let quotePrefix = String(repeating: "> ", count: quoteLevel + 1)
-                let quotedContent = innerContent
-                    .split(separator: "\n")
-                    .map { quotePrefix + $0 }
-                    .joined(separator: "\n")
-                markdown += "\n" + quotedContent + "\n"
-                
-            case "pre":
-                let code = try element.text()
-                markdown += "\n```\n\(code)\n```\n"
-                
-            case "code":
-                let codeText = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
-                markdown += "`\(codeText)`"
-                
-            case "strong", "b":
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
-                markdown += "**\(content)**"
-                
-            case "em", "i":
-                let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
-                markdown += "*\(content)*"
-                
-            case "hr":
-                markdown += "\n---\n"
 
-            case "button":
-                // Only convert buttons that contain links, ignore JS-only buttons
+            // Leaf elements: produce output without child traversal
+            if leafTags.contains(tagName) {
+                result += try processLeafElement(element, tagName: tagName, pageURL: pageURL)
+                continue
+            }
+
+            // Formatting elements: process directly (children are inline/shallow)
+            if formattingTags.contains(tagName) {
+                result += try processFormattingElement(element, tagName: tagName, quoteLevel: ql, pageURL: pageURL)
+                continue
+            }
+
+            // Button: only process if it contains links
+            if tagName == "button" {
                 let links = try element.select("a")
-                if !links.isEmpty() {
-                    let content = try element.getChildNodes().map {
-                        try convertNodeToMarkdown($0, quoteLevel: quoteLevel, pageURL: pageURL)
-                    }.joined()
-                    markdown += content
+                if links.isEmpty() { continue }
+                // Push children iteratively
+                for child in element.getChildNodes().reversed() {
+                    stack.append((child, ql))
                 }
-                // Buttons without links are ignored (UI-only elements)
+                continue
+            }
 
-            case "dialog":
-                // Dialogs are UI modals, ignore them
-                break
-
-            default:
-                let content = try element.getChildNodes().map {
-                    try convertNodeToMarkdown($0, quoteLevel: quoteLevel, pageURL: pageURL)
-                }.joined()
-                markdown += content
+            // Transparent elements (div, span, form, label, etc.):
+            // Push children onto stack — iterative, no recursion
+            for child in element.getChildNodes().reversed() {
+                stack.append((child, ql))
             }
         }
-        return markdown
+
+        return result
+    }
+
+    // MARK: - Leaf element processing
+
+    /// Processes a leaf element that produces output without child traversal.
+    private static func processLeafElement(_ element: Element, tagName: String, pageURL: URL?) throws -> String {
+        switch tagName {
+        case "a":
+            let href = try element.attr("href")
+            let resolvedHref = resolveURL(href, pageURL: pageURL)
+            let text = try extractLinkText(from: element, pageURL: pageURL)
+            return "[\(text)](\(resolvedHref))"
+
+        case "img":
+            let src = try element.attr("src")
+            let resolvedSrc = resolveURL(src, pageURL: pageURL)
+            let alt = try element.attr("alt")
+            return "![\(alt)](\(resolvedSrc))"
+
+        case "video":
+            let src = try element.attr("src")
+            let resolvedSrc = resolveURL(src, pageURL: pageURL)
+            let title = try element.attr("title").isEmpty ? "video" : element.attr("title")
+            return "[\(title)](\(resolvedSrc))"
+
+        case "hr":
+            return "\n---\n"
+
+        case "dialog":
+            return ""
+
+        default:
+            return ""
+        }
+    }
+
+    // MARK: - Formatting element processing
+
+    /// Processes a formatting element by collecting its children's Markdown.
+    ///
+    /// Children of formatting elements are inline content (text, links, emphasis, etc.)
+    /// which are structurally shallow. This uses `getChildMarkdown` which may recurse,
+    /// but the depth is bounded by the HTML content model.
+    private static func processFormattingElement(_ element: Element, tagName: String, quoteLevel: Int, pageURL: URL?) throws -> String {
+        switch tagName {
+        case "h1", "h2", "h3", "h4", "h5", "h6":
+            let headerLevel = Int(String(tagName.dropFirst())) ?? 1
+            let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
+            return "\n" + String(repeating: "#", count: headerLevel) + " " + content + "\n"
+
+        case "p":
+            let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
+            let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedContent.isEmpty {
+                return "\n" + trimmedContent + "\n"
+            }
+            return ""
+
+        case "ul":
+            return try convertListToMarkdown(element, isOrdered: false, pageURL: pageURL)
+
+        case "ol":
+            return try convertListToMarkdown(element, isOrdered: true, pageURL: pageURL)
+
+        case "table":
+            return try convertTableToMarkdown(element, pageURL: pageURL)
+
+        case "blockquote":
+            let innerContent = try element.getChildMarkdown(quoteLevel: 0, pageURL: pageURL)
+            let quotePrefix = String(repeating: "> ", count: quoteLevel + 1)
+            let quotedContent = innerContent
+                .split(separator: "\n")
+                .map { quotePrefix + $0 }
+                .joined(separator: "\n")
+            return "\n" + quotedContent + "\n"
+
+        case "pre":
+            let code = try element.text()
+            return "\n```\n\(code)\n```\n"
+
+        case "code":
+            let codeText = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
+            return "`\(codeText)`"
+
+        case "strong", "b":
+            let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
+            return "**\(content)**"
+
+        case "em", "i":
+            let content = try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
+            return "*\(content)*"
+
+        default:
+            return try element.getChildMarkdown(quoteLevel: quoteLevel, pageURL: pageURL)
+        }
     }
     
     /// Converts HTML lists to Markdown.

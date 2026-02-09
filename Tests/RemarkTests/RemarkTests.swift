@@ -952,6 +952,438 @@ func testDeeplyNestedElements() throws {
     #expect(remark.markdown.contains("深くネストされた段落"))
 }
 
+// MARK: - Iterative traversal tests
+
+@Test("Extreme depth div nesting does not crash")
+func testExtremeDepthDivNesting() throws {
+    let depth = 500
+    let opening = String(repeating: "<div>", count: depth)
+    let closing = String(repeating: "</div>", count: depth)
+    let html = "\(opening)<p>Deep content</p>\(closing)"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("Deep content"))
+}
+
+@Test("Extreme depth span nesting does not crash")
+func testExtremeDepthSpanNesting() throws {
+    let depth = 300
+    let opening = String(repeating: "<span>", count: depth)
+    let closing = String(repeating: "</span>", count: depth)
+    let html = "<p>\(opening)Nested text\(closing)</p>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("Nested text"))
+}
+
+@Test("Child order is preserved through transparent elements")
+func testChildOrderPreserved() throws {
+    let html = "<div><p>A</p><p>B</p><p>C</p></div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    guard let rangeA = markdown.range(of: "A"),
+          let rangeB = markdown.range(of: "B"),
+          let rangeC = markdown.range(of: "C") else {
+        Issue.record("A, B, C not all found in output")
+        return
+    }
+    #expect(rangeA.lowerBound < rangeB.lowerBound)
+    #expect(rangeB.lowerBound < rangeC.lowerBound)
+}
+
+@Test("Child order preserved across nested transparent elements")
+func testChildOrderNestedTransparent() throws {
+    let html = """
+    <div>
+        <div><p>First</p></div>
+        <div><p>Second</p></div>
+        <div><p>Third</p></div>
+    </div>
+    """
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    guard let r1 = markdown.range(of: "First"),
+          let r2 = markdown.range(of: "Second"),
+          let r3 = markdown.range(of: "Third") else {
+        Issue.record("Not all items found")
+        return
+    }
+    #expect(r1.lowerBound < r2.lowerBound)
+    #expect(r2.lowerBound < r3.lowerBound)
+}
+
+@Test("quoteLevel propagates through transparent elements")
+func testQuoteLevelThroughTransparent() throws {
+    let html = "<blockquote><div><div><p>Quoted text</p></div></div></blockquote>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("> Quoted text"))
+}
+
+@Test("Nested blockquotes through transparent elements")
+func testNestedBlockquotesThroughTransparent() throws {
+    let html = "<blockquote><div><blockquote><div><p>Deep quote</p></div></blockquote></div></blockquote>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("> > Deep quote"))
+}
+
+@Test("Text nodes interleaved with elements in transparent container")
+func testTextNodesInterleavedWithElements() throws {
+    let html = "<div>Before <p>Middle</p> After</div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("Before"))
+    #expect(markdown.contains("Middle"))
+    #expect(markdown.contains("After"))
+    // Verify order
+    guard let rBefore = markdown.range(of: "Before"),
+          let rMiddle = markdown.range(of: "Middle"),
+          let rAfter = markdown.range(of: "After") else {
+        Issue.record("Not all text found")
+        return
+    }
+    #expect(rBefore.lowerBound < rMiddle.lowerBound)
+    #expect(rMiddle.lowerBound < rAfter.lowerBound)
+}
+
+@Test("Semantic element is wrapped in HTML comments")
+func testSemanticElementHTMLComments() throws {
+    let html = "<article><p>Article content</p></article>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("<!-- article -->"))
+    #expect(markdown.contains("<!-- /article -->"))
+    #expect(markdown.contains("Article content"))
+}
+
+@Test("Empty semantic element produces no output")
+func testEmptySemanticElement() throws {
+    let html = "<section></section><p>Visible</p>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(!markdown.contains("<!-- section -->"))
+    #expect(markdown.contains("Visible"))
+}
+
+@Test("Multiple semantic elements each get comments")
+func testMultipleSemanticElements() throws {
+    let html = """
+    <article><p>Art</p></article>
+    <section><p>Sec</p></section>
+    """
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("<!-- article -->"))
+    #expect(markdown.contains("<!-- /article -->"))
+    #expect(markdown.contains("<!-- section -->"))
+    #expect(markdown.contains("<!-- /section -->"))
+}
+
+@Test("Semantic element inside transparent element")
+func testSemanticInsideTransparent() throws {
+    let html = "<div><div><article><p>Deep article</p></article></div></div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("<!-- article -->"))
+    #expect(markdown.contains("Deep article"))
+    #expect(markdown.contains("<!-- /article -->"))
+}
+
+@Test("Button with link is processed")
+func testButtonWithLink() throws {
+    let html = "<button><a href=\"https://example.com\">Click</a></button>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("[Click](https://example.com)"))
+}
+
+@Test("Button without link is skipped")
+func testButtonWithoutLink() throws {
+    let html = "<button>Just text</button><p>After</p>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(!markdown.contains("Just text"))
+    #expect(markdown.contains("After"))
+}
+
+@Test("Leaf element: img inside transparent elements")
+func testImgInsideTransparent() throws {
+    let html = "<div><div><img src=\"pic.jpg\" alt=\"Photo\"></div></div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown == "![Photo](pic.jpg)")
+}
+
+@Test("Leaf element: hr inside transparent elements")
+func testHrInsideTransparent() throws {
+    let html = "<div><p>Before</p><hr><p>After</p></div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("Before"))
+    #expect(markdown.contains("---"))
+    #expect(markdown.contains("After"))
+    guard let rBefore = markdown.range(of: "Before"),
+          let rHr = markdown.range(of: "---"),
+          let rAfter = markdown.range(of: "After") else {
+        Issue.record("Not all content found")
+        return
+    }
+    #expect(rBefore.lowerBound < rHr.lowerBound)
+    #expect(rHr.lowerBound < rAfter.lowerBound)
+}
+
+@Test("Leaf element: video inside transparent elements")
+func testVideoInsideTransparent() throws {
+    let html = "<div><video src=\"movie.mp4\" title=\"My Movie\"></video></div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown == "[My Movie](movie.mp4)")
+}
+
+@Test("Leaf element: dialog produces no output")
+func testDialogProducesNothing() throws {
+    let html = "<div><dialog>Hidden</dialog><p>Shown</p></div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(!markdown.contains("Hidden"))
+    #expect(markdown.contains("Shown"))
+}
+
+@Test("Formatting inside transparent: heading levels")
+func testHeadingLevelsInsideTransparent() throws {
+    let html = "<div><h1>H1</h1><h2>H2</h2><h3>H3</h3><h4>H4</h4><h5>H5</h5><h6>H6</h6></div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("# H1"))
+    #expect(markdown.contains("## H2"))
+    #expect(markdown.contains("### H3"))
+    #expect(markdown.contains("#### H4"))
+    #expect(markdown.contains("##### H5"))
+    #expect(markdown.contains("###### H6"))
+}
+
+@Test("Formatting inside transparent: strong and em")
+func testInlineFormattingInsideTransparent() throws {
+    let html = "<div><p><strong>Bold</strong> and <em>Italic</em></p></div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("**Bold**"))
+    #expect(markdown.contains("*Italic*"))
+}
+
+@Test("Formatting inside transparent: list")
+func testListInsideTransparent() throws {
+    let html = "<div><div><ul><li>A</li><li>B</li></ul></div></div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("- A"))
+    #expect(markdown.contains("- B"))
+}
+
+@Test("Formatting inside transparent: table")
+func testTableInsideTransparent() throws {
+    let html = "<div><div><table><tr><th>Col</th></tr><tr><td>Val</td></tr></table></div></div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("| Col |"))
+    #expect(markdown.contains("| --- |"))
+    #expect(markdown.contains("| Val |"))
+}
+
+@Test("Formatting inside transparent: code block")
+func testCodeBlockInsideTransparent() throws {
+    let html = "<div><pre>let x = 1</pre></div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("```"))
+    #expect(markdown.contains("let x = 1"))
+}
+
+@Test("Empty transparent elements produce no output")
+func testEmptyTransparentElements() throws {
+    let html = "<div><div><div></div></div></div><p>Visible</p>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+    #expect(trimmed == "Visible")
+}
+
+@Test("Empty paragraph produces no output")
+func testEmptyParagraph() throws {
+    let html = "<p></p><p>Content</p>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+    #expect(trimmed == "Content")
+}
+
+@Test("Whitespace-only text nodes are skipped")
+func testWhitespaceOnlyTextNodes() throws {
+    let html = "<div>   \n   <p>Real content</p>   \n   </div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+    #expect(trimmed == "Real content")
+}
+
+@Test("Wide tree with many siblings at same level")
+func testWideSiblingTree() throws {
+    var html = "<div>"
+    for i in 1...50 {
+        html += "<p>Item \(i)</p>"
+    }
+    html += "</div>"
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    for i in 1...50 {
+        #expect(markdown.contains("Item \(i)"))
+    }
+}
+
+@Test("Real-world wrapper div pattern")
+func testRealWorldWrapperDivs() throws {
+    let html = """
+    <div class="page">
+      <div class="container">
+        <div class="row">
+          <div class="col-md-8">
+            <div class="content-wrapper">
+              <div class="article-body">
+                <h1>Title</h1>
+                <p>First paragraph.</p>
+                <div class="image-wrapper">
+                  <img src="photo.jpg" alt="Photo">
+                </div>
+                <p>Second paragraph with <a href="https://example.com">link</a>.</p>
+                <ul>
+                  <li>Item A</li>
+                  <li>Item B</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("# Title"))
+    #expect(markdown.contains("First paragraph."))
+    #expect(markdown.contains("![Photo](photo.jpg)"))
+    #expect(markdown.contains("[link](https://example.com)"))
+    #expect(markdown.contains("Second paragraph with"))
+    #expect(markdown.contains("- Item A"))
+    #expect(markdown.contains("- Item B"))
+
+    // Verify ordering
+    guard let rTitle = markdown.range(of: "# Title"),
+          let rFirst = markdown.range(of: "First paragraph"),
+          let rPhoto = markdown.range(of: "![Photo]"),
+          let rSecond = markdown.range(of: "Second paragraph"),
+          let rItems = markdown.range(of: "- Item A") else {
+        Issue.record("Missing content")
+        return
+    }
+    #expect(rTitle.lowerBound < rFirst.lowerBound)
+    #expect(rFirst.lowerBound < rPhoto.lowerBound)
+    #expect(rPhoto.lowerBound < rSecond.lowerBound)
+    #expect(rSecond.lowerBound < rItems.lowerBound)
+}
+
+@Test("Link with image child inside transparent element")
+func testLinkWithImageInsideTransparent() throws {
+    let html = """
+    <div><div><a href="https://example.com"><img src="banner.jpg" alt="Banner"></a></div></div>
+    """
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("["))
+    #expect(markdown.contains("](https://example.com)"))
+}
+
+@Test("Mixed transparent elements: form, label, fieldset")
+func testFormLabelFieldsetTransparent() throws {
+    let html = """
+    <form>
+      <fieldset>
+        <label><span>Name:</span></label>
+      </fieldset>
+      <fieldset>
+        <label><span>Email:</span></label>
+      </fieldset>
+    </form>
+    """
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    #expect(markdown.contains("Name:"))
+    #expect(markdown.contains("Email:"))
+}
+
+@Test("Deeply nested transparent with formatting at each level")
+func testFormattingAtEachDepthLevel() throws {
+    let html = """
+    <div>
+      <p>Level 1</p>
+      <div>
+        <p>Level 2</p>
+        <div>
+          <p>Level 3</p>
+          <div>
+            <p>Level 4</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    let element = try SwiftSoup.parse(html).body()!
+    let markdown = try Remark.convertNodeToMarkdown(element)
+
+    for i in 1...4 {
+        #expect(markdown.contains("Level \(i)"))
+    }
+    guard let r1 = markdown.range(of: "Level 1"),
+          let r2 = markdown.range(of: "Level 2"),
+          let r3 = markdown.range(of: "Level 3"),
+          let r4 = markdown.range(of: "Level 4") else {
+        Issue.record("Not all levels found")
+        return
+    }
+    #expect(r1.lowerBound < r2.lowerBound)
+    #expect(r2.lowerBound < r3.lowerBound)
+    #expect(r3.lowerBound < r4.lowerBound)
+}
+
 @Test("Multiple same-level headings")
 func testMultipleSameLevelHeadings() throws {
     let htmlContent = """
