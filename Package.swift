@@ -3,6 +3,24 @@
 
 import PackageDescription
 
+#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+let uiTargets: [Target] = [
+    .target(
+        name: "RemarkUI",
+        dependencies: ["RemarkKit"]
+    )
+]
+let uiProducts: [Product] = [
+    .library(
+        name: "RemarkUI",
+        targets: ["RemarkUI"]
+    )
+]
+#else
+let uiTargets: [Target] = []
+let uiProducts: [Product] = []
+#endif
+
 let package = Package(
     name: "Remark",
     platforms: [.iOS(.v18), .macOS(.v15)],
@@ -10,13 +28,10 @@ let package = Package(
         .library(
             name: "RemarkKit",
             targets: ["RemarkKit"]),
-        .library(
-            name: "RemarkUI",
-            targets: ["RemarkUI"]),
         .executable(
             name: "remark",
             targets: ["RemarkCLI"]),
-    ],
+    ] + uiProducts,
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.11.3"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0")
@@ -26,12 +41,6 @@ let package = Package(
             name: "RemarkKit",
             dependencies: [
                 "SwiftSoup"
-            ]
-        ),
-        .target(
-            name: "RemarkUI",
-            dependencies: [
-                "RemarkKit"
             ]
         ),
         .executableTarget(
@@ -45,5 +54,5 @@ let package = Package(
             name: "RemarkTests",
             dependencies: ["RemarkKit"]
         ),
-    ]
+    ] + uiTargets
 )

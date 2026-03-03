@@ -54,6 +54,8 @@ class HTMLFetcher: HTMLFetching {
         let platform = "Macintosh; Intel Mac OS X \(osVersion)"
 #elseif os(iOS)
         let platform = "iPhone; CPU iPhone OS \(osVersion.replacingOccurrences(of: ".", with: "_")) like Mac OS X"
+#elseif os(Linux)
+        let platform = "X11; Linux x86_64"
 #else
         let platform = "Unknown Platform"
 #endif

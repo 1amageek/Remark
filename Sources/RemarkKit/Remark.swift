@@ -1,7 +1,6 @@
 
 
 import Foundation
-import WebKit
 import SwiftSoup
 
 /// A struct for parsing HTML content and extracting data into Markdown, with support for front matter metadata such as title, description, and Open Graph (OG) data.
@@ -70,20 +69,28 @@ extension Remark {
     /// This method creates a dynamic HTML fetcher on the main actor, fetches the HTML content,
     /// and initializes a new `Remark` instance with the fetched content.
     public static func fetch(from url: URL, method: FetchMethod = .interactive, blockedResourceTypes: BlockedResourceType = .nonessential, timeout: TimeInterval = 15, customHeaders: [String: String]? = nil) async throws -> Remark {
-        let html = try await {
-            switch method {
-            case .interactive:
-                let fetcher = await MainActor.run { DynamicHTMLFetcher(blockedResourceTypes: blockedResourceTypes) }
-                return try await fetcher.fetchHTML(from: url, timeout: timeout, customHeaders: customHeaders)
-            case .default:
-                let fetcher = HTMLFetcher()
-                return try await fetcher.fetchHTML(from: url, timeout: timeout, customHeaders: customHeaders)
-            }
-        }()
+        let html: String
+        switch method {
+        case .interactive:
+            #if canImport(WebKit)
+            let fetcher = await MainActor.run { DynamicHTMLFetcher(blockedResourceTypes: blockedResourceTypes) }
+            html = try await fetcher.fetchHTML(from: url, timeout: timeout, customHeaders: customHeaders)
+            #elseif os(Linux)
+            let fetcher = ChromiumFetcher()
+            html = try await fetcher.fetchHTML(from: url, timeout: timeout, customHeaders: customHeaders)
+            #else
+            let fetcher = HTMLFetcher()
+            html = try await fetcher.fetchHTML(from: url, timeout: timeout, customHeaders: customHeaders)
+            #endif
+        case .default:
+            let fetcher = HTMLFetcher()
+            html = try await fetcher.fetchHTML(from: url, timeout: timeout, customHeaders: customHeaders)
+        }
         return try Remark(html, url: url)
     }
 }
 
+#if canImport(WebKit)
 extension Remark {
     /// Creates an async stream that emits `Remark` instances whenever the page content changes.
     /// - Parameters:
@@ -112,7 +119,7 @@ extension Remark {
                 let htmlStream = await fetcher.contentCheckStream(
                     from: url,
                     checkInterval: checkInterval
-                )                
+                )
                 for await html in htmlStream {
                     do {
                         let remark = try Remark(html, url: url)
@@ -121,12 +128,12 @@ extension Remark {
                         continuation.yield(.failure(error))
                     }
                 }
-                
+
                 continuation.finish()
             }
         }
     }
-    
+
     /// Creates an async stream that emits `Remark` instances whenever the page content changes,
     /// throwing an error if parsing fails.
     /// - Parameters:
@@ -174,6 +181,7 @@ extension Remark {
         }
     }
 }
+#endif
 
 extension Remark {
     

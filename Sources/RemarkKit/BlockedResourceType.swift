@@ -86,6 +86,16 @@ public struct BlockedResourceType: OptionSet, Sendable, Hashable {
             self.contains(mapping.type) ? mapping.resourceType : nil
         }
     }
+
+    // MARK: - Content Blocker JSON
+
+    /// Generates the WebKit Content Blocker JSON string for this resource type set.
+    var contentBlockerJSON: String {
+        let types = resourceTypeStrings
+        guard !types.isEmpty else { return "[]" }
+        let typesJSON = types.map { "\"\($0)\"" }.joined(separator: ",")
+        return "[{\"trigger\":{\"url-filter\":\".*\",\"resource-type\":[\(typesJSON)]},\"action\":{\"type\":\"block\"}}]"
+    }
 }
 
 // MARK: - CLI Parsing

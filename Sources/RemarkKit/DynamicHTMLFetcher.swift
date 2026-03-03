@@ -1,3 +1,4 @@
+#if canImport(WebKit)
 import WebKit
 import Foundation
 import os.log
@@ -18,17 +19,17 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
     init(blockedResourceTypes: BlockedResourceType = .nonessential) {
         self.blockedResourceTypes = blockedResourceTypes
     }
-    
+
     private static func generateUserAgent() -> String {
         let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
         let osVersionFormatted = osVersion.replacingOccurrences(of: "Version ", with: "")
         let platform = "Macintosh; Intel Mac OS X \(osVersionFormatted)"
         let webView = WKWebView()
         let webKitVersion = webView.configuration.applicationNameForUserAgent ?? "AppleWebKit/537.36"
-        
+
         return "Mozilla/5.0 (\(platform)) \(webKitVersion) (KHTML, like Gecko) Safari/\(webKitVersion.components(separatedBy: "/").last ?? "537.36")"
     }
-    
+
     private static func generateAcceptLanguage() -> String {
         let languages = Locale.preferredLanguages
         let languagesWithQuality = languages.enumerated().map { index, language -> String in
@@ -41,7 +42,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         }
         return languagesWithQuality.joined(separator: ",")
     }
-    
+
     func contentCheckStream(
         from url: URL,
         referer: URL? = nil,
@@ -79,7 +80,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
 
                 webView?.customUserAgent = userAgent
                 webView?.load(request)
-                
+
                 contentCheckTimer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
                     Task { @MainActor in
                         guard let webView = self?.webView else { return }
@@ -87,7 +88,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
                             let currentHTML = try await webView.evaluateJavaScript("document.documentElement.outerHTML") as? String
                             if let html = currentHTML {
                                 continuation.yield(html)
-                                
+
                                 if html == localPreviousHTML {
                                     localStableCount += 1
                                     if localStableCount >= requiredStableCount {
@@ -104,7 +105,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
                         }
                     }
                 }
-                
+
                 DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
                     self?.contentCheckTimer?.invalidate()
                     continuation.finish()
@@ -112,7 +113,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             }
         }
     }
-    
+
     func fetchHTML(from url: URL, referer: URL? = nil, timeout: TimeInterval = 15, customHeaders: [String: String]? = nil) async throws -> String {
         self.currentReferer = referer
         self.hasExtendedTimeout = false
@@ -150,35 +151,20 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             }
         }
     }
-    
+
     private static func getContentRuleList(for types: BlockedResourceType) async -> WKContentRuleList? {
         if let cached = cachedContentRuleLists[types] {
             return cached
         }
 
-        let resourceTypes = types.resourceTypeStrings
-        guard !resourceTypes.isEmpty else { return nil }
-
-        let resourceTypesJSON = resourceTypes.map { "\"\($0)\"" }.joined(separator: ", ")
-        let blockRules = """
-        [
-            {
-                "trigger": {
-                    "url-filter": ".*",
-                    "resource-type": [\(resourceTypesJSON)]
-                },
-                "action": {
-                    "type": "block"
-                }
-            }
-        ]
-        """
+        let json = types.contentBlockerJSON
+        guard json != "[]" else { return nil }
 
         let identifier = "BlockResources_\(types.rawValue)"
         return await withCheckedContinuation { continuation in
             WKContentRuleListStore.default().compileContentRuleList(
                 forIdentifier: identifier,
-                encodedContentRuleList: blockRules
+                encodedContentRuleList: json
             ) { ruleList, _ in
                 if let ruleList {
                     cachedContentRuleLists[types] = ruleList
@@ -212,7 +198,6 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
     private func handleTimeout() {
         guard let handler = completionHandler else { return }
 
-        // データがあるが安定していない場合、2秒延長して安定を待つ
         if previousHTML != nil && !hasExtendedTimeout {
             hasExtendedTimeout = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
@@ -221,26 +206,24 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             return
         }
 
-        // タイムアウト処理を実行
         contentCheckTimer?.invalidate()
         completionHandler = nil
 
         if let html = previousHTML {
             handler(.success(html))
         } else if let webView = webView {
-            // 安定していなくてもWebViewにデータがあれば返す
             webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
                 if let html = result as? String {
                     handler(.success(html))
                 } else {
-                    handler(.failure(ValidationError("Timeout: could not retrieve HTML content")))
+                    handler(.failure(FetcherError("Timeout: could not retrieve HTML content")))
                 }
             }
         } else {
-            handler(.failure(ValidationError("Timeout: WebView not available")))
+            handler(.failure(FetcherError("Timeout: WebView not available")))
         }
     }
-    
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         contentCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -248,9 +231,8 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             }
         }
     }
-    
+
     private func checkContentStability(_ webView: WKWebView) {
-        // Check HTML content stability directly
         webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, error in
             guard let self = self else { return }
             if let error = error {
@@ -259,7 +241,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             }
 
             guard let currentHTML = result as? String else {
-                self.handleError(ValidationError("Could not extract HTML content"))
+                self.handleError(FetcherError("Could not extract HTML content"))
                 return
             }
 
@@ -278,7 +260,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             }
         }
     }
-    
+
     private func handleError(_ error: Error) {
         contentCheckTimer?.invalidate()
         if let handler = completionHandler {
@@ -286,7 +268,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             completionHandler = nil
         }
     }
-    
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         contentCheckTimer?.invalidate()
         if let handler = completionHandler {
@@ -294,7 +276,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             completionHandler = nil
         }
     }
-    
+
     private func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
@@ -308,7 +290,7 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         }
         decisionHandler(.allow)
     }
-    
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         contentCheckTimer?.invalidate()
         if let handler = completionHandler {
@@ -316,20 +298,13 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
             completionHandler = nil
         }
     }
-    
+
     deinit {
         contentStreamContinuation?.finish()
-        
+
         DispatchQueue.main.sync {
             contentCheckTimer?.invalidate()
         }
     }
 }
-
-struct ValidationError: Error {
-    let message: String
-    
-    init(_ message: String) {
-        self.message = message
-    }
-}
+#endif
