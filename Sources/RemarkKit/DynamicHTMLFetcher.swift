@@ -51,10 +51,11 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
         timeout: TimeInterval = 15,
         customHeaders: [String: String]? = nil
     ) -> AsyncStream<String> {
+        self.previousHTML = nil
+        self.stableContentCount = 0
+
         return AsyncStream { continuation in
             self.contentStreamContinuation = continuation
-            var localPreviousHTML: String?
-            var localStableCount = 0
 
             Task { @MainActor in
                 self.currentReferer = referer
@@ -83,21 +84,21 @@ class DynamicHTMLFetcher: NSObject, WKNavigationDelegate, HTMLFetching, @uncheck
 
                 contentCheckTimer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
                     Task { @MainActor in
-                        guard let webView = self?.webView else { return }
+                        guard let self, let webView = self.webView else { return }
                         do {
                             let currentHTML = try await webView.evaluateJavaScript("document.documentElement.outerHTML") as? String
                             if let html = currentHTML {
                                 continuation.yield(html)
 
-                                if html == localPreviousHTML {
-                                    localStableCount += 1
-                                    if localStableCount >= requiredStableCount {
-                                        self?.contentCheckTimer?.invalidate()
+                                if html == self.previousHTML {
+                                    self.stableContentCount += 1
+                                    if self.stableContentCount >= requiredStableCount {
+                                        self.contentCheckTimer?.invalidate()
                                         continuation.finish()
                                     }
                                 } else {
-                                    localStableCount = 0
-                                    localPreviousHTML = html
+                                    self.stableContentCount = 0
+                                    self.previousHTML = html
                                 }
                             }
                         } catch {
